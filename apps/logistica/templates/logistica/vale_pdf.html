@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        @page {
+            size: A4; /* Tamaño hoja */
+            margin: 1cm; /* Margen general reducido */
+            @frame footer_frame {           /* Footer fijo */
+                -pdf-frame-content: footerContent;
+                bottom: 1cm;
+                margin-left: 1cm;
+                margin-right: 1cm;
+                height: 1cm;
+            }
+        }
+        body {
+            font-family: Helvetica, sans-serif;
+            font-size: 10pt;
+            color: #333;
+        }
+        .header-table {
+            width: 100%;
+            border-bottom: 1px solid #2c3e50;
+            padding-bottom: 5px;
+            margin-bottom: 10px;
+        }
+        .company-name {
+            font-size: 14pt;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .document-title {
+            font-size: 12pt;
+            font-weight: bold;
+            text-align: right;
+            color: #7f8c8d;
+        }
+        .document-number {
+            font-size: 10pt;
+            text-align: right;
+            color: #e74c3c; /* Rojo para el folio */
+        }
+        
+        /* Tabla de Información General */
+        .info-table {
+            width: 100%;
+            margin-bottom: 10px;
+            background-color: #f9f9f9;
+            padding: 5px;
+            border: 1px solid #ddd;
+            font-size: 9pt;
+        }
+        .info-table td { padding: 2px; }
+        .label {
+            font-weight: bold;
+            color: #555;
+            width: 12%;
+        }
+        .value {
+            width: 38%;
+        }
+
+        /* Tabla de Items */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 9pt;
+        }
+        .items-table th {
+            background-color: #2c3e50;
+            color: white;
+            font-weight: bold;
+            padding: 4px;
+            text-align: left;
+            border: 1px solid #2c3e50;
+        }
+        .items-table td {
+            border: 1px solid #ddd;
+            padding: 3px;
+            vertical-align: middle;
+        }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+
+        /* Firmas */
+        .signatures-table {
+            width: 100%;
+            margin-top: 80px;
+        }
+        .sign-box {
+            border-top: 1px solid #333;
+            text-align: center;
+            padding-top: 5px;
+            width: 30%;
+        }
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 80px;
+            color: rgba(255, 0, 0, 0.2); /* Rojo semitransparente */
+            font-weight: bold;
+            z-index: 9999;
+            border: 5px solid rgba(255, 0, 0, 0.2);
+            padding: 20px;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    {% if movimiento.estado == 'CANCELADO' %}
+        <div class="watermark">ANULADO</div>
+    {% endif %}
+    {% if movimiento.estado == 'BORRADOR' %}
+        <div class="watermark" style="color: rgba(0, 0, 0, 0.1); border-color: rgba(0, 0, 0, 0.1);">BORRADOR</div>
+    {% endif %}
+
+    <table class="header-table">
+        <tr>
+            <td valign="top">
+                {% if config.logo %}
+                    <img src="{{ config.logo.path }}" style="height: 50px; margin-bottom: 5px;">
+                {% endif %}
+                <div class="company-name">{{ config.nombre_empresa|default:"EMPRESA DEMO" }}</div>
+                {% if config.ruc %}<div style="font-size: 9pt;">RUC: {{ config.ruc }}</div>{% endif %}
+                {% if config.direccion %}<div style="font-size: 8pt; color: #666;">{{ config.direccion }}</div>{% endif %}
+                <div style="margin-top: 5px;"><strong>Proyecto:</strong> {{ movimiento.proyecto.nombre }}</div>
+            </td>
+            <td valign="top">
+                <div class="document-title">{{ titulo }}</div>
+                <div class="document-number">{{ movimiento.nota_ingreso|default:movimiento.codigo_visual }}</div>
+                <div style="text-align: right; margin-top:5px;">
+                    Estado: <strong>{{ movimiento.get_estado_display }}</strong>
+                </div>
+                <div style="text-align: right; margin-top: 10px;">
+                    <img src="data:image/png;base64,{{ qr_code }}" style="width: 70px; height: 70px;">
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <table class="info-table">
+        <tr>
+            <td class="label">Fecha:</td>
+            <td class="value">{{ movimiento.fecha|date:"d/m/Y H:i" }}</td>
+            <td class="label">Requerimiento:</td>
+            <td class="value">
+                {% if movimiento.requerimiento %}
+                    <strong>{{ movimiento.requerimiento.codigo }}</strong>
+                {% else %}
+                    ---
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td class="label">Origen:</td>
+            <td class="value">{{ movimiento.almacen_origen.nombre|default:"EXTERNO / PROVEEDOR" }}</td>
+            <td class="label">Destino:</td>
+            <td class="value">
+                {% if movimiento.torre_destino %}
+                    Torre {{ movimiento.torre_destino.codigo }}
+                {% else %}
+                    {{ movimiento.almacen_destino.nombre|default:"EXTERNO" }}
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td class="label">Solicitante:</td>
+            <td class="value">{{ movimiento.solicitante|upper }}</td>
+            <td class="label">Referencia:</td>
+            <td class="value">{{ movimiento.documento_referencia|default:"---" }}</td>
+        </tr>
+        <tr>
+            <td class="label">Usuario:</td>
+            <td class="value">{{ movimiento.creado_por.username }}</td>
+            <td class="label"></td>
+            <td class="value"></td>
+        </tr>
+    </table>
+
+    <h3 style="color: #2c3e50; border-bottom: 1px solid #ccc;">Detalle de Materiales</h3>
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th width="15%">CÓDIGO</th>
+                <th width="55%">DESCRIPCIÓN</th>
+                <th width="10%" class="text-center">UND</th>
+                <th width="20%" class="text-right">CANTIDAD</th>
+                
+                {% if movimiento.proyecto.usa_control_costos %}
+                <!-- <th width="10%" class="text-right">P.UNIT</th> -->
+                <!-- <th width="10%" class="text-right">TOTAL</th> -->
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in detalles %}
+            <tr>
+                <td>{{ item.material.codigo }}</td>
+                <td>{{ item.material.descripcion }}</td>
+                <td class="text-center">{{ item.material.unidad_medida }}</td>
+                <td class="text-right" style="font-size: 11pt;"><strong>{{ item.cantidad|floatformat:2 }}</strong></td>
+                
+                {% if movimiento.proyecto.usa_control_costos %}
+                <!-- Ocultamos costos en el vale operativo de almacén para no mostrar precios a personal de obra -->
+                {% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if movimiento.observacion %}
+    <div style="margin-top: 20px; padding: 10px; background-color: #f9f9f9; border: 1px solid #eee;">
+        <strong>Observaciones:</strong><br>
+        {{ movimiento.observacion }}
+    </div>
+    {% endif %}
+
+    <table class="signatures-table">
+        <tr>
+            <td width="10%"></td>
+            <td class="sign-box">
+                <strong>ENTREGADO POR</strong><br>
+                <small>Almacén / Logística</small>
+            </td>
+            <td width="20%"></td>
+            <td class="sign-box">
+                <strong>RECIBIDO CONFORME</strong><br>
+                <small>{{ movimiento.solicitante|default:"Nombre y Firma" }}</small>
+                <br><br>
+                <small>DNI: __________________</small>
+            </td>
+            <td width="10%"></td>
+        </tr>
+    </table>
+
+    <div id="footerContent" style="text-align:center; font-size: 8pt; color: #999;">
+        Generado automáticamente por ERP Almacén Obra el {% now "d/m/Y H:i" %} - Página <pdf:pagenumber> de <pdf:pagecount>
+    </div>
+</body>
+</html>

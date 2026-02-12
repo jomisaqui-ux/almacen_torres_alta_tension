@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+{% block header %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow mb-4 border-left-success">
+            <div class="card-header py-3 bg-success text-white">
+                <h6 class="m-0 font-weight-bold">Recepción de Equipo (Devolución)</h6>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning text-dark">
+                    <strong>Equipo:</strong> {{ activo.codigo }} - {{ activo.nombre }}<br>
+                    <strong>Devuelve:</strong> {{ activo.trabajador_asignado }}
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Estado / Observaciones de Recepción</label>
+                        {{ form.observacion }}
+                        <div class="form-text">Indique si el equipo presenta fallas o daños.</div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success">Confirmar Devolución</button>
+                        <a href="{% url 'activo_list' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

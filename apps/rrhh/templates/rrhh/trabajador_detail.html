@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Legajo: {{ trabajador.nombres }}{% endblock %}
+{% block header %}Legajo del Personal{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Tarjeta de Información Personal -->
+    <div class="col-md-4 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Datos Personales</h6>
+                <a href="{% url 'trabajador_update' trabajador.id %}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-pen"></i> Editar
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    <div class="rounded-circle bg-secondary text-white d-inline-flex justify-content-center align-items-center" style="width: 80px; height: 80px; font-size: 2rem;">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <h5 class="mt-2 font-weight-bold">{{ trabajador.apellidos }}, {{ trabajador.nombres }}</h5>
+                    <span class="badge bg-info text-dark">{{ trabajador.cargo }}</span>
+                </div>
+                
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>DNI:</strong> <span>{{ trabajador.dni }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>Estado:</strong> 
+                        {% if trabajador.activo %}
+                            <span class="badge bg-success">Activo</span>
+                        {% else %}
+                            <span class="badge bg-danger">Inactivo</span>
+                        {% endif %}
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>Talla Zapato:</strong> <span>{{ trabajador.talla_zapato|default:"-" }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>Talla Ropa:</strong> <span>{{ trabajador.talla_ropa|default:"-" }}</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Columna Derecha: Activos y EPPs -->
+    <div class="col-md-8">
+        <!-- 1. Tarjeta de Activos (Deuda) -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 bg-warning text-dark">
+                <h6 class="m-0 font-weight-bold"><i class="fas fa-tools me-2"></i>Herramientas y Equipos a su Cargo</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Código</th>
+                                <th>Equipo / Herramienta</th>
+                                <th>Marca</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for activo in trabajador.activos_actuales.all %}
+                            <tr>
+                                <td class="fw-bold">{{ activo.codigo }}</td>
+                                <td>{{ activo.nombre }}</td>
+                                <td>{{ activo.marca }}</td>
+                                <td><span class="badge bg-warning text-dark">En Poder</span></td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">No tiene activos asignados actualmente.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Tarjeta de Historial EPPs (Consumo) -->
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 bg-info text-white">
+                <h6 class="m-0 font-weight-bold"><i class="fas fa-hard-hat me-2"></i>Historial de EPPs Entregados</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Fecha</th>
+                                <th>EPP / Material</th>
+                                <th class="text-center">Cant.</th>
+                                <th>Ref.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in epps %}
+                            <tr>
+                                <td>{{ item.movimiento.fecha|date:"d/m/Y" }}</td>
+                                <td>{{ item.material.descripcion }}</td>
+                                <td class="text-center fw-bold">{{ item.cantidad|floatformat:0 }} {{ item.material.unidad_medida }}</td>
+                                <td class="small text-muted">{{ item.movimiento.nota_ingreso }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-3">No se han registrado entregas de EPP.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

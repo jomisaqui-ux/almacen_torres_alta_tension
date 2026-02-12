@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
+
+<style>
+    /* 1. CORRECCIÓN DEL "DOBLE TEXTO" (FANTASMA) */
+    select.django-select2 {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+        background: none !important;
+        appearance: none !important;
+        opacity: 0 !important;
+        z-index: -1000 !important;
+    }
+
+    /* 2. AJUSTES CAJA VISIBLE */
+    .select2-container .select2-selection--single {
+        height: 38px !important;
+        border: 1px solid #ced4da !important;
+        display: flex !important;
+        align-items: center !important;
+        background-color: #fff !important;
+    }
+    
+    .select2-container--bootstrap-5 .select2-selection {
+        border-radius: 0.375rem;
+    }
+    
+    .select2-container {
+        width: 100% !important;
+        display: block !important;
+    }
+
+    /* 3. SOLUCIÓN FONDO TRANSPARENTE (ESPECÍFICA) */
+    .select2-container--bootstrap-5 .select2-dropdown {
+        z-index: 9999 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #ced4da !important;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-search--dropdown,
+    .select2-container--bootstrap-5 .select2-results,
+    .select2-container--bootstrap-5 .select2-results__options,
+    .select2-container--bootstrap-5 .select2-results__option {
+        background-color: #ffffff !important;
+        color: #212529 !important;
+    }
+
+    .select2-container--bootstrap-5 .select2-results__option--highlighted[aria-selected] {
+        background-color: #0d6efd !important;
+        color: #ffffff !important;
+    }
+</style>
+{% endblock %}
+
+{% block header %}
+    <a href="{% url 'inventario_list' %}" class="text-decoration-none text-muted fs-4 me-2"><i class="fas fa-arrow-left"></i></a>
+    {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    
+    <div class="card mb-4 border-top-primary shadow-sm">
+        <div class="card-body bg-light">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Tipo Operación</label>
+                    {{ form.tipo }}
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Requerimiento (Ref.)</label>
+                    {{ form.requerimiento }}
+                    <div class="form-text small text-muted">Opcional para Ingresos, Obligatorio para Salidas.</div>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Solicitante</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="fas fa-user"></i></span>
+                        {{ form.solicitante }}
+                    </div>
+                </div>
+
+                {% if form.almacen_origen.is_hidden == False %}
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Almacén Origen</label>
+                    {{ form.almacen_origen }}
+                </div>
+                {% endif %}
+                
+                {% if form.almacen_destino.is_hidden == False %}
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Almacén Destino</label>
+                    {{ form.almacen_destino }}
+                </div>
+                {% endif %}
+
+                {% if form.trabajador.is_hidden == False %}
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-info">Trabajador (Beneficiario)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-info text-white"><i class="fas fa-hard-hat"></i></span>
+                        {{ form.trabajador }}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if form.torre_destino.is_hidden == False %}
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-primary">Torre Destino</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-primary text-white"><i class="fas fa-building"></i></span>
+                        {{ form.torre_destino }}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <hr class="my-3 text-muted opacity-25">
+
+            <div class="row">
+                <div class="col-md-4">
+                    {% if 'SALIDA' in titulo|upper or 'CONSUMO' in titulo|upper or 'SALIDA' in form.tipo.value %}
+                        <label class="form-label fw-bold small text-primary">N° VALE SALIDA</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-primary text-white border-primary">
+                                <i class="fas fa-file-export"></i>
+                            </span>
+                            {{ form.nota_ingreso }}
+                        </div>
+                        <div class="form-text small mt-1 text-primary">
+                            <i class="fas fa-info-circle"></i> Se generará ej: <strong>VS-000X</strong>
+                        </div>
+                    {% else %}
+                        <label class="form-label fw-bold small text-success">N° NOTA INGRESO</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-success text-white border-success">
+                                <i class="fas fa-barcode"></i>
+                            </span>
+                            {{ form.nota_ingreso }}
+                        </div>
+                        <div class="form-text small mt-1 text-success">
+                            <i class="fas fa-info-circle"></i> Se generará ej: <strong>NI-000X</strong>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <div class="col-md-5">
+                    <label class="form-label fw-bold small text-dark">N° GUÍA / FACTURA</label>
+                    <div class="input-group shadow-sm">
+                        <span class="input-group-text bg-white border-end-0">
+                            <i class="fas fa-file-invoice"></i>
+                        </span>
+                        {{ form.documento_referencia }}
+                    </div>
+                </div>
+            </div>
+            
+            {% for field in form %}
+                {% if field.is_hidden %}{{ field }}{% endif %}
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="card mb-4 shadow">
+        <div class="card-header bg-dark text-white d-flex justify-content-between">
+            <span>Materiales</span>
+            <button type="button" class="btn btn-sm btn-outline-light" id="add-item"><i class="fas fa-plus"></i> Agregar</button>
+        </div>
+        <div class="card-body p-0">
+            {{ formset.management_form }}
+            <table class="table table-striped mb-0" id="items-table">
+                <thead>
+                    <tr>
+                        <th width="35%">Material</th>
+                        <th width="10%">Cant.</th>
+                        <th width="15%">Costo (S/.)</th> 
+                        <th width="35%">Asignar a Req. / Stock Libre</th>
+                        <th width="10%"></th>
+                    </tr>
+                </thead>
+                <tbody id="form-list">
+                    {% for form in formset %}
+                    <tr class="item-row">
+                        {{ form.id }}
+                        <td>{{ form.material }}</td>
+                        <td>{{ form.cantidad }}</td>
+                        <td>{{ form.costo_unitario }}</td>
+                        <td>{{ form.seleccion_requerimiento }}</td>
+                        <td class="text-center">{{ form.DELETE }}</td>
+                    </tr>
+                    {% if form.errors %}
+                    <tr><td colspan="4" class="text-danger small">{{ form.errors }}</td></tr>
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+        <button type="submit" class="btn btn-success btn-lg px-5">
+            <i class="fas fa-check-circle me-2"></i> {{ boton_texto }}
+        </button>
+    </div>
+</form>
+
+<div id="empty-form" style="display:none;">
+    <table>
+        <tr class="item-row">
+            {{ formset.empty_form.id }}
+            <td>{{ formset.empty_form.material }}</td>
+            <td>{{ formset.empty_form.cantidad }}</td>
+            <td>{{ formset.empty_form.costo_unitario }}</td>
+            <td>{{ formset.empty_form.seleccion_requerimiento }}</td>
+            <td class="text-center">{{ formset.empty_form.DELETE }}</td>
+        </tr>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<script>
+    // --- VARIABLES GLOBALES ---
+    const ALMACEN_ID_URL = "{{ almacen.id }}"; // El almacén en el que estamos parados
+    const TIPO_ACCION = "{{ titulo }}".toUpperCase(); // Para saber si entramos a INGRESO o SALIDA
+
+    function toggleCampos() {
+        // Obtenemos el texto de la opción seleccionada
+        let tipoTexto = $('#id_tipo option:selected').text().toUpperCase();
+        let tipoValor = $('#id_tipo').val();
+
+        // ELEMENTOS DEL DOM (Los contenedores col-md-4)
+        let divOrigen = $('#id_almacen_origen').closest('.col-md-4');
+        let divDestino = $('#id_almacen_destino').closest('.col-md-4');
+        let divTorre = $('#id_torre_destino').closest('.col-md-4');
+        let divTrabajador = $('#id_trabajador').closest('.col-md-4');
+
+        // LÓGICA DE VISIBILIDAD
+        if (tipoTexto.includes('INGRESO') || tipoTexto.includes('DEVOLUCION') || tipoTexto.includes('ENTRADA')) {
+            // === ES UN INGRESO ===
+            // 1. Origen: Se oculta (viene de proveedor externo)
+            divOrigen.hide(); 
+            
+            // 2. Destino: Se muestra (es donde entra)
+            divDestino.show();
+            // Truco: Seteamos el destino como el almacén actual si está vacío
+            if(!$('#id_almacen_destino').val()) {
+                $('#id_almacen_destino').val(ALMACEN_ID_URL).trigger('change');
+            }
+
+            // 3. Torre: Se oculta
+            divTorre.hide();
+            $('#id_torre_destino').val(null).trigger('change');
+            
+            divTrabajador.hide();
+
+        } else if (tipoTexto.includes('SALIDA') || tipoTexto.includes('CONSUMO')) {
+            // === ES UNA SALIDA ===
+            // 1. Origen: Se muestra (sale de aquí)
+            divOrigen.show();
+            if(!$('#id_almacen_origen').val()) {
+                $('#id_almacen_origen').val(ALMACEN_ID_URL).trigger('change');
+            }
+
+            // 2. Destino: Se oculta (porque va a una Torre, no a otro almacén)
+            divDestino.hide();
+            $('#id_almacen_destino').val(null).trigger('change');
+
+            // 3. Torre vs Trabajador
+            if (tipoTexto.includes('EPP')) {
+                divTorre.hide();
+                $('#id_torre_destino').val(null).trigger('change');
+                divTrabajador.show();
+            } else {
+                divTorre.show();
+                divTrabajador.hide();
+                $('#id_trabajador').val(null).trigger('change');
+            }
+
+        } else if (tipoTexto.includes('TRANSFERENCIA')) {
+            // === ES TRANSFERENCIA ===
+            divOrigen.show();
+            divDestino.show();
+            divTorre.hide();
+            divTrabajador.hide();
+        }
+    }
+
+    // --- LÓGICA DE VALIDACIÓN DE STOCK ---
+    function validarStockFila(row) {
+        // ... (Mismo código de validación que ya tenías y funcionaba bien) ...
+        const ALMACEN_ACTUAL = $('#id_almacen_origen').val() || ALMACEN_ID_URL;
+        let materialSelect = row.find('select.django-select2');
+        let cantidadInput = row.find('input[type="number"]').first(); 
+        let materialId = materialSelect.val();
+        let cantidadSolicitada = parseFloat(cantidadInput.val()) || 0;
+
+        cantidadInput.removeClass('is-invalid');
+        row.find('.stock-error').remove();
+        $('button[type="submit"]').prop('disabled', false); 
+
+        // Solo validamos stock si es SALIDA
+        let esSalida = $('#id_tipo option:selected').text().toUpperCase().includes('SALIDA');
+        
+        if (!esSalida || !materialId || !ALMACEN_ACTUAL) return;
+
+        let url = `/logistica/api/stock/${ALMACEN_ACTUAL}/${materialId}/`;
+
+        $.get(url, function(data) {
+            let stockDisponible = parseFloat(data.stock);
+            if (cantidadSolicitada > stockDisponible) {
+                cantidadInput.addClass('is-invalid');
+                let mensaje = `<div class="invalid-feedback stock-error d-block">
+                                    <strong>¡Stock Insuficiente!</strong> Máx: ${stockDisponible}
+                               </div>`;
+                cantidadInput.after(mensaje);
+                $('button[type="submit"]').prop('disabled', true);
+            } else {
+                if ($('.is-invalid').length === 0) $('button[type="submit"]').prop('disabled', false);
+            }
+        });
+    }
+
+    // --- ACTIVAR SELECT2 (CÓDIGO QUE YA TENÍAS) ---
+    function activarSelect2(selector) {
+        if ($(selector).data('select2')) { $(selector).select2('destroy'); }
+        $(selector).css({position: 'absolute', left: '-9999px', width: '1px', height: '1px', opacity: 0});
+        $(selector).select2({
+            theme: 'bootstrap-5', width: '100%', placeholder: 'Buscar material...', allowClear: true, closeOnSelect: true
+        });
+        $(selector).on('select2:open', function () { document.querySelector('.select2-search__field').focus(); });
+        $(selector).on('select2:select', function () {
+            $(this).select2('close');
+            let row = $(this).closest('tr');
+            let cantidadInput = row.find('input[type="number"]').first();
+            if (cantidadInput.length > 0) cantidadInput.focus();
+            
+            validarStockFila(row); // Validar al seleccionar
+        });
+    }
+
+    // --- SINCRONIZACIÓN CABECERA -> DETALLES ---
+    function sincronizarRequerimientos(triggeredByChange = false) {
+        let reqCabecera = $('#id_requerimiento').val();
+        let filas = $('#form-list tr.item-row');
+        
+        filas.each(function() {
+            let selectReq = $(this).find('select[name$="-seleccion_requerimiento"]');
+            
+            if (reqCabecera) {
+                selectReq.val(reqCabecera);
+                selectReq.prop('disabled', true); // Bloquear por seguridad
+                selectReq.addClass('bg-light');   // Indicador visual
+            } else {
+                selectReq.prop('disabled', false); // Desbloquear si se limpia la cabecera
+                selectReq.removeClass('bg-light');
+                
+                // Si el usuario cambió la cabecera a "Sin Requerimiento", reseteamos las filas a Stock Libre
+                if (triggeredByChange) {
+                    selectReq.val('STOCK_LIBRE');
+                }
+            }
+        });
+    }
+
+    $(document).ready(function() {
+        // 1. Iniciar lógica visual
+        toggleCampos();
+        $('#id_tipo').change(function() { toggleCampos(); });
+
+        // 2. Iniciar Select2
+        $('#form-list tr:visible select.django-select2').each(function() { activarSelect2(this); });
+
+        // 3. Botón Agregar
+        $('#add-item').on('click', function(e) {
+            e.preventDefault();
+            let totalFormsInput = $('#id_detalles-TOTAL_FORMS');
+            let formCount = parseInt(totalFormsInput.val());
+            let templateHtml = $('#empty-form table tbody').html() || $('#empty-form table').html();
+            let newRowHtml = templateHtml.replace(/__prefix__/g, formCount);
+            let $newRow = $(newRowHtml);
+            $('#form-list').append($newRow);
+            totalFormsInput.val(formCount + 1);
+            let $newSelect = $newRow.find('select.django-select2');
+            activarSelect2($newSelect);
+            $newSelect.select2('open');
+            
+            // Sincronizar la nueva fila con la cabecera si aplica
+            sincronizarRequerimientos();
+        });
+
+        // 4. Validar al escribir cantidad
+        $(document).on('keyup change', 'input[type="number"]', function() {
+            let row = $(this).closest('tr');
+            validarStockFila(row);
+        });
+
+        // 5. Listener para cambio en Requerimiento de Cabecera
+        $('#id_requerimiento').change(function() {
+            sincronizarRequerimientos(true);
+        });
+
+        // LÓGICA DE INICIO: Forzar "Stock Libre" solo en creación limpia (Nueva Operación)
+        let isEdit = "{{ form.instance.pk|default:'' }}" !== "";
+        let hasErrors = {% if form.errors or formset.errors %}true{% else %}false{% endif %};
+        let reqCabecera = $('#id_requerimiento').val();
+
+        if (!isEdit && !hasErrors && reqCabecera === '') {
+             sincronizarRequerimientos(true); // true = Forzar cambio a Stock Libre
+        } else {
+             sincronizarRequerimientos(false); // false = Respetar lo que venga (Edición o Error)
+        }
+    });
+</script>
+{% endblock %}

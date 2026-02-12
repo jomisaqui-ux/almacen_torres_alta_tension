@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Administrar Kit{% endblock %}
+{% block header %}Contenido del Kit{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-left-primary shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Kit Seleccionado</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ kit.nombre }} ({{ kit.codigo }})</div>
+                        <p class="text-muted small mb-0">{{ kit.descripcion }}</p>
+                    </div>
+                    <div class="col-auto">
+                        <a href="{% url 'kit_list' %}" class="btn btn-secondary btn-sm">Volver al Listado</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Lado Izquierdo: Componentes Actuales -->
+    <div class="col-md-6">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 bg-success text-white">
+                <h6 class="m-0 font-weight-bold">Componentes en el Kit ({{ componentes.count }})</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Código</th>
+                                <th>Activo</th>
+                                <th class="text-center">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in componentes %}
+                            <tr>
+                                <td class="fw-bold">{{ item.codigo }}</td>
+                                <td>{{ item.nombre }} <br> <small class="text-muted">{{ item.serie }}</small></td>
+                                <td class="text-center">
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="accion" value="quitar">
+                                        <input type="hidden" name="activo_id" value="{{ item.id }}">
+                                        <button type="submit" class="btn btn-danger btn-sm" title="Quitar del Kit"><i class="fas fa-minus"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-center text-muted">El kit está vacío.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lado Derecho: Disponibles -->
+    <div class="col-md-6">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 bg-secondary text-white">
+                <h6 class="m-0 font-weight-bold">Activos Disponibles</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <input type="text" id="filtro-disponibles" class="form-control" placeholder="Filtrar por código o nombre...">
+                </div>
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-bordered table-sm table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Código</th>
+                                <th>Activo</th>
+                                <th class="text-center">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-disponibles">
+                            {% for item in disponibles %}
+                            <tr>
+                                <td class="fw-bold">{{ item.codigo }}</td>
+                                <td>{{ item.nombre }} <br> <small class="text-muted">{{ item.serie }}</small></td>
+                                <td class="text-center">
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="accion" value="agregar">
+                                        <input type="hidden" name="activo_id" value="{{ item.id }}">
+                                        <button type="submit" class="btn btn-primary btn-sm" title="Agregar al Kit"><i class="fas fa-plus"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="3" class="text-center text-muted">No hay activos disponibles sin kit.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const filtroInput = document.getElementById('filtro-disponibles');
+    const tablaBody = document.getElementById('tabla-disponibles');
+    const filas = tablaBody.getElementsByTagName('tr');
+
+    filtroInput.addEventListener('keyup', function() {
+        const textoFiltro = filtroInput.value.toUpperCase();
+
+        for (let i = 0; i < filas.length; i++) {
+            let celdaCodigo = filas[i].getElementsByTagName('td')[0];
+            let celdaActivo = filas[i].getElementsByTagName('td')[1];
+            
+            if (celdaCodigo && celdaActivo) {
+                const textoFila = (celdaCodigo.textContent || celdaCodigo.innerText) + " " + (celdaActivo.textContent || celdaActivo.innerText);
+                if (textoFila.toUpperCase().indexOf(textoFiltro) > -1) {
+                    filas[i].style.display = "";
+                } else {
+                    filas[i].style.display = "none";
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,101 @@
+Actúa como un Ingeniero Analista de Sistemas e Ingeniero de Software Senior especializado en Python y Django, con experiencia en ERP de construcción, logística y gestión de almacenes de obra.
+Necesito diseñar y desarrollar un sistema ERP completo para la gestión de almacén de obra, con trazabilidad total, control de stock, control documental y reglas de negocio claras, siguiendo buenas prácticas de Django, arquitectura limpia y código mantenible.
+
+Contexto del proyecto
+•	Nombre del proyecto: almacen_obra.
+•	Aplicación principal: logística.
+•	Base de datos relacional (PostgreSQL).
+•	Sistema preparado para auditoría, escalabilidad y futuras integraciones
+
+ESTADO ACTUAL DEL DESARROLLO (Checklist):
+=========================================
+✅ 1. Requerimientos: Implementado (Modelos, Vistas, Barra de Progreso).
+✅ 2. Logística/Kardex: Finalizado (Flujo completo, Validaciones estrictas, Kardex corregido).
+✅ 3. Activos Fijos: Implementado (Equipos, Herramientas, Kits, Asignaciones y Devoluciones).
+✅ 4. RRHH: Implementado (Trabajadores, Tallas, Historial EPPs, Constancia de Libre Adeudo).
+✅ 5. Configuración y Reportes: Implementado (Branding dinámico, PDFs oficiales, Exportación Excel).
+➡️ 6. PRÓXIMO PASO: Pruebas Integrales y Preparación para Despliegue.
+
+Módulos del sistema.
+1.	Requerimientos de Material.
+Implementar un módulo de Requerimientos que permita:
+•	Crear requerimientos por obra / área / trabajador.
+•	Registrar solicitante, fecha y prioridad.
+•	Detalle de materiales solicitados (material, cantidad solicitada).
+•	Estados del requerimiento:
+o	Pendiente.
+o	Atendido Parcial.
+o	Atendido Total.
+o	Cancelado.
+•	Control automático de:
+o	Cantidad solicitada.
+o	Cantidad atendida.
+o	Cantidad pendiente.
+Un requerimiento puede atenderse en una o varias salidas de almacén.
+
+2.	Materiales Consumibles (Kardex).
+Implementar un Kardex de materiales que contemple:
+•	Ingresos.
+•	Salidas.
+•	Ajustes.
+Ingresos de Material.
+•	Registro de proveedor, documento de referencia, fecha y responsable.
+•	Actualización automática del stock.
+•	Generación obligatoria de Vale de Ingreso (PDF).
+•	Trazabilidad completa para auditoría.
+Salidas de Material.
+•	Las salidas deben estar obligatoriamente asociadas a un Requerimiento.
+•	Permitir atención parcial o total del requerimiento.
+•	Validaciones:
+o	No permitir salidas que superen la cantidad pendiente del requerimiento.
+o	No permitir stock negativo.
+•	Actualización automática del estado del requerimiento
+•	Generación obligatoria de Vale de Salida (PDF).
+3.	Activos Fijos
+Gestión de:
+•	Equipos.
+•	Herramientas.
+•	Kits (conjunto de herramientas).
+Requisitos:
+•	Control por número de serie.
+•	Estados: Disponible, Asignado, En Mantenimiento, Dado de Baja.
+•	Historial de asignaciones y devoluciones.
+4.	RRHH.
+Gestión de:
+•	Trabajadores.
+•	Tallas (ropa y EPP).
+•	Entrega de EPPs.
+•	Adeudos de materiales, activos y EPPs
+Regla clave:
+•	No permitir generar Constancia de Libre Adeudo si existen adeudos pendientes.
+5.	Reportes y Documentos.
+Implementar generación de documentos oficiales:
+•	PDF.
+o	Vale de Ingreso de Material.
+o	Vale de Salida de Material.
+o	Constancia de Libre Adeudo (documento oficial).
+
+•	Word (DOCX).
+o	Constancia de Libre Adeudo (opcional, solo si RRHH lo solicita).
+Cada documento debe incluir:
+•	Número correlativo.
+•	Fecha y responsable.
+•	Detalle de materiales o adeudos.
+•	Firmas (entregado / recibido / aprobado).
+Configuración y Branding del Sistema.
+El sistema debe permitir una configuración general de la empresa, incluyendo:
+•	Nombre de la empresa.
+•	Logo corporativo (PNG o JPG).
+•	Datos legales básicos.
+El logo configurado debe integrarse automáticamente en todos los documentos generados en PDF:
+•	Vale de Ingreso.
+•	Vale de Salida.
+•	Constancia de Libre Adeudo.
+El cambio de logo debe realizarse sin modificar código y aplicarse a los nuevos documentos generados.
+Lineamientos técnicos.
+•	Modelos Django correctamente normalizados.
+•	Uso adecuado de ForeignKey, related_name y enums para estados.
+•	Lógica de negocio en services / domain layer.
+•	Evitar lógica pesada en views.
+•	Uso de señales solo cuando sea estrictamente necesario.
+•	Preparado para control de permisos por rol y auditoría.

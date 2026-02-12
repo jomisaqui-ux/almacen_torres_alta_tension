@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - ERP Obra{% endblock %}
+{% block header %}Tablero de Control Logístico{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="card card-kpi bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Stock Valorizado</h6>
+                        <h3 class="fw-bold">S/ {{ valor_stock|floatformat:2 }}</h3>
+                    </div>
+                    <i class="fas fa-money-bill-wave fa-2x opacity-50"></i>
+                </div>
+                <small>Dinero inmovilizado en almacén</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card card-kpi {% if pendientes > 0 %}bg-warning text-dark{% else %}bg-success text-white{% endif %} h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Por Procesar</h6>
+                        <h3 class="fw-bold">{{ pendientes }}</h3>
+                    </div>
+                    <i class="fas fa-clipboard-check fa-2x opacity-50"></i>
+                </div>
+                <small>Vales en borrador</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- NUEVA TARJETA: Requerimientos (Pedidos de Obra) -->
+    <div class="col-md-3 mb-4">
+        <div class="card card-kpi bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Pedidos Obra</h6>
+                        <h3 class="fw-bold">{{ req_pendientes }}</h3>
+                    </div>
+                    <i class="fas fa-clipboard-list fa-2x opacity-50"></i>
+                </div>
+                <small>Requerimientos pendientes</small>
+                <a href="{% url 'requerimiento_list' %}" class="stretched-link"></a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-4">
+        <div class="card card-kpi bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Proyectos Activos</h6>
+                        <h3 class="fw-bold">{{ proyectos_activos }}</h3>
+                    </div>
+                    <i class="fas fa-hard-hat fa-2x opacity-50"></i>
+                </div>
+                <small>Obras en ejecución</small>
+            </div>
+        </div>
+    </div>
+
+     <div class="col-md-3 mb-4">
+        <div class="card card-kpi bg-secondary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Total Estructuras</h6>
+                        <h3 class="fw-bold">{{ torres_total }}</h3>
+                    </div>
+                    <i class="fas fa-tower-cell fa-2x opacity-50"></i>
+                </div>
+                <small>Centros de costo registrados</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tarjeta ROJA: Stock Crítico -->
+    <div class="col-md-3 mb-4">
+        <div class="card card-kpi bg-danger text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Stock Crítico</h6>
+                        <h3 class="fw-bold">{{ alertas_stock }}</h3>
+                    </div>
+                    <i class="fas fa-exclamation-circle fa-2x opacity-50"></i>
+                </div>
+                <small>Agotado o bajo mínimo</small>
+                <a href="{% url 'inventario_list' %}?filtro=critico" class="stretched-link"></a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tarjeta AMARILLA: Advertencia -->
+    <div class="col-md-3 mb-4">
+        <div class="card card-kpi bg-warning text-dark h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-uppercase mb-1">Advertencia Stock</h6>
+                        <h3 class="fw-bold">{{ alertas_advertencia }}</h3>
+                    </div>
+                    <i class="fas fa-exclamation-triangle fa-2x opacity-50"></i>
+                </div>
+                <small>Próximos a agotarse</small>
+                <a href="{% url 'inventario_list' %}?filtro=advertencia" class="stretched-link"></a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-lg-8">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Consumo de Materiales (Últimos 7 días)</h6>
+            </div>
+            <div class="card-body">
+                <canvas id="myChart" height="100"></canvas> 
+                </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    var ctx = document.getElementById('myChart').getContext('2d');
+    var myChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: {{ chart_labels|safe }},
+            datasets: [{
+                label: 'Ingresos / Compras',
+                data: {{ chart_ingresos|safe }},
+                backgroundColor: 'rgba(25, 135, 84, 0.7)', // Verde Success
+                borderColor: 'rgba(25, 135, 84, 1)',
+                borderWidth: 1
+            },
+            {
+                label: 'Salidas / Consumos',
+                data: {{ chart_salidas|safe }},
+                backgroundColor: 'rgba(13, 110, 253, 0.7)', // Azul Primary
+                borderColor: 'rgba(13, 110, 253, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+            }
+        }
+    });
+</script>
+{% endblock %}

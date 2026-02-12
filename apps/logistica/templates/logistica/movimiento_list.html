@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Historial de Movimientos{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Estilo para cortar textos largos */
+    .texto-limitado {
+        max-width: 250px; 
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: inline-block;
+        vertical-align: middle;
+    }
+
+    /* Efecto hover suave */
+    .table-hover tbody tr:hover {
+        background-color: #f8f9fa;
+        transition: background-color 0.2s ease-in-out;
+    }
+
+    /* Badges elegantes */
+    .badge-pill {
+        border-radius: 50rem;
+        padding-left: 0.8em;
+        padding-right: 0.8em;
+        padding-top: 0.5em;
+        padding-bottom: 0.5em;
+    }
+
+    /* Fecha compacta */
+    .fecha-box {
+        line-height: 1.2;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 pt-3">
+    <div>
+        <h2 class="fw-bold text-dark mb-0">📦 Transacciones</h2>
+        <p class="text-muted small mb-0">Historial de ingresos y salidas</p>
+    </div>
+    
+    <div class="btn-group">
+        <a href="{% url 'inventario_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-boxes me-2"></i> Inventario
+        </a>
+
+        <div class="btn-group">
+            <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-plus-circle me-2"></i> Nueva Operación
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow">
+                <li>
+                    <a class="dropdown-item d-flex align-items-center py-2" href="{% url 'operacion_almacen' 'ingreso' '00000000-0000-0000-0000-000000000000' %}">
+                        <span class="bg-success bg-opacity-10 text-success rounded-circle p-1 me-2">
+                            <i class="fas fa-arrow-down fa-sm"></i>
+                        </span>
+                        <div>
+                            <span class="d-block fw-bold">Registrar Ingreso</span>
+                            <small class="text-muted">Compras, Devoluciones</small>
+                        </div>
+                    </a>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <a class="dropdown-item d-flex align-items-center py-2" href="{% url 'operacion_almacen' 'salida' '00000000-0000-0000-0000-000000000000' %}">
+                        <span class="bg-danger bg-opacity-10 text-danger rounded-circle p-1 me-2">
+                            <i class="fas fa-arrow-up fa-sm"></i>
+                        </span>
+                        <div>
+                            <span class="d-block fw-bold">Registrar Salida</span>
+                            <small class="text-muted">A Obra, Consumo</small>
+                        </div>
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item d-flex align-items-center py-2" href="{% url 'operacion_almacen' 'salida' '00000000-0000-0000-0000-000000000000' %}?tipo=SALIDA_EPP">
+                        <span class="bg-info bg-opacity-10 text-info rounded-circle p-1 me-2">
+                            <i class="fas fa-hard-hat fa-sm"></i>
+                        </span>
+                        <div>
+                            <span class="d-block fw-bold">Entrega de EPP</span>
+                            <small class="text-muted">Asignar a Personal</small>
+                        </div>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-3">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light text-secondary text-uppercase small fw-bold" style="border-bottom: 2px solid #edf2f9;">
+                    <tr>
+                        <th class="ps-4 py-3">Fecha</th>
+                        <th class="py-3">Tipo Operación</th>
+                        <th class="py-3">Origen / Destino</th>
+                        <th class="py-3">Documento</th> <th class="py-3 text-center">Estado</th>
+                        <th class="py-3 text-end pe-4">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mov in movimientos %}
+                    <tr>
+                        <td class="ps-4">
+                            <div class="fecha-box">
+                                <div class="fw-bold text-dark">{{ mov.fecha|date:"d M Y" }}</div>
+                                <div class="small text-muted">{{ mov.fecha|date:"H:i a" }}</div>
+                            </div>
+                        </td>
+                        
+                        <td>
+                            {% if 'INGRESO' in mov.tipo or 'DEVOLUCION' in mov.tipo or 'ENTRADA' in mov.tipo %}
+                                <div class="d-flex align-items-center text-success">
+                                    <div class="bg-success bg-opacity-10 p-2 rounded-circle me-2">
+                                        <i class="fas fa-arrow-down"></i>
+                                    </div>
+                                    <div>
+                                        <span class="fw-bold d-block">Ingreso</span>
+                                        <small class="text-muted" style="font-size: 0.75rem;">Compra/Devolución</small>
+                                    </div>
+                                </div>
+                            {% else %}
+                                <div class="d-flex align-items-center text-danger">
+                                    <div class="bg-danger bg-opacity-10 p-2 rounded-circle me-2">
+                                        <i class="fas fa-arrow-up"></i>
+                                    </div>
+                                    <div>
+                                        <span class="fw-bold d-block">Salida</span>
+                                        <small class="text-muted" style="font-size: 0.75rem;">Obra/Consumo</small>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            <div class="small text-muted mb-1">
+                                <i class="fas fa-circle text-secondary me-1" style="font-size: 0.6rem;"></i>
+                                <span class="fw-bold text-secondary" style="font-size: 0.8rem;">DE:</span> 
+                                {% if mov.almacen_origen %}
+                                    {{ mov.almacen_origen.nombre }}
+                                {% else %}
+                                    Proveedor Ext.
+                                {% endif %}
+                            </div>
+                            
+                            <div class="fw-bold text-dark">
+                                <i class="fas fa-map-marker-alt text-primary me-1"></i>
+                                <span class="fw-bold text-primary" style="font-size: 0.8rem;">A:</span> 
+                                {% if mov.torre_destino %}
+                                    <span class="texto-limitado text-dark" title="Torre {{ mov.torre_destino }}">
+                                        Torre {{ mov.torre_destino }}
+                                    </span>
+                                {% elif mov.almacen_destino %}
+                                    <span class="texto-limitado">{{ mov.almacen_destino.nombre }}</span>
+                                {% else %}
+                                    --
+                                {% endif %}
+                            </div>
+                        </td>
+
+                        <td>
+                            {% if mov.nota_ingreso %}
+                                {% if 'SALIDA' in mov.tipo or 'CONSUMO' in mov.tipo or 'VS' in mov.nota_ingreso %}
+                                    <span class="badge bg-primary badge-pill mb-1">
+                                        <i class="fas fa-file-export me-1"></i> {{ mov.nota_ingreso }}
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-success badge-pill mb-1">
+                                        <i class="fas fa-file-import me-1"></i> {{ mov.nota_ingreso }}
+                                    </span>
+                                {% endif %}
+                            {% else %}
+                                <span class="badge bg-secondary badge-pill mb-1 bg-opacity-50 text-dark">
+                                    <i class="fas fa-clock me-1"></i> Por Generar
+                                </span>
+                            {% endif %}
+                            
+                            {% if mov.documento_referencia %}
+                                <div class="small text-muted ps-1">
+                                    <i class="fas fa-hashtag small"></i> {{ mov.documento_referencia }}
+                                </div>
+                            {% else %}
+                                <div class="small text-muted ps-1 opacity-25">--</div>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-center">
+                            {% if mov.estado == 'CONFIRMADO' %}
+                                <span class="badge bg-light text-success border border-success rounded-pill px-3">
+                                    <i class="fas fa-check-circle me-1"></i> Confirmado
+                                </span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark rounded-pill px-3">
+                                    <i class="fas fa-clock me-1"></i> Borrador
+                                </span>
+                            {% endif %}
+                        </td>
+
+                        <td class="text-end pe-4">
+                            <div class="btn-group">
+                                <a href="{% url 'generar_vale_pdf' mov.id %}" target="_blank" 
+                                   class="btn btn-sm btn-outline-secondary border-0" 
+                                   data-bs-toggle="tooltip" title="Imprimir PDF">
+                                    <i class="fas fa-print fa-lg"></i>
+                                </a>
+                                
+                                {% if mov.estado == 'BORRADOR' %}
+                                    <a href="{% url 'confirmar_movimiento_web' mov.id %}" 
+                                       class="btn btn-sm btn-outline-success border-0" 
+                                       onclick="return confirm('¿Confirmar operación? Se actualizará el stock.');"
+                                       title="Confirmar">
+                                        <i class="fas fa-check-circle fa-lg"></i>
+                                    </a>
+                                    <a href="{% url 'editar_movimiento' mov.id %}" 
+                                       class="btn btn-sm btn-outline-primary border-0" title="Editar">
+                                        <i class="fas fa-pen"></i>
+                                    </a>
+                                    <a href="{% url 'anular_movimiento' mov.id %}" 
+                                       class="btn btn-sm btn-outline-danger border-0" 
+                                       onclick="return confirm('¿Anular este borrador?');" title="Anular">
+                                        <i class="fas fa-ban"></i>
+                                    </a>
+                                {% elif mov.estado == 'CONFIRMADO' %}
+                                    <a href="{% url 'anular_movimiento' mov.id %}" 
+                                       class="btn btn-sm btn-outline-danger border-0" 
+                                       onclick="return confirm('⚠️ ATENCIÓN: ¿Anular movimiento confirmado?\n\nSe revertirá el stock físico y los saldos del requerimiento.');" title="Anular y Revertir">
+                                        <i class="fas fa-ban"></i>
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5">
+                            <div class="text-muted opacity-50">
+                                <i class="fas fa-inbox fa-3x mb-3"></i>
+                                <p>No hay movimientos registrados.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

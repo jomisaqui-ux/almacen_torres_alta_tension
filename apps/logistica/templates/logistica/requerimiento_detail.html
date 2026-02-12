@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Detalle {{ req.codigo }}{% endblock %}
+{% block header %}Detalle de Requerimiento: {{ req.codigo }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Información General -->
+    <div class="col-md-4 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Datos del Pedido</h6>
+                {% if req.estado == 'PENDIENTE' or req.estado == 'PARCIAL' %}
+                <div class="float-end">
+                    <a href="{% url 'cerrar_requerimiento' req.id %}" class="btn btn-sm btn-outline-danger" onclick="return confirm('¿Está seguro de finalizar este requerimiento? Se asumirá que no se entregará el saldo pendiente.');">
+                        <i class="fas fa-check-double"></i> Finalizar
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <p><strong>Solicitante:</strong> {{ req.solicitante }}</p>
+                <p><strong>Fecha Solicitud:</strong> {{ req.fecha_solicitud|date:"d/m/Y" }}</p>
+                <p><strong>Prioridad:</strong> {{ req.get_prioridad_display }}</p>
+                <p><strong>Estado:</strong> 
+                    <span class="badge bg-{% if req.estado == 'TOTAL' %}success{% elif req.estado == 'PARCIAL' %}warning text-dark{% else %}danger{% endif %}">
+                        {{ req.get_estado_display }}
+                    </span>
+                </p>
+                <hr>
+                <p class="small text-muted">{{ req.observacion|default:"Sin observaciones" }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progreso de Materiales -->
+    <div class="col-md-8 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Progreso de Atención</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Material</th>
+                                <th class="text-center">Solicitado</th>
+                                <th class="text-center">Ingresado (Almacén)</th>
+                                <th class="text-center">Despachado (Obra)</th>
+                                <th class="text-center">Pendiente Entrega</th>
+                                <th style="width: 25%;">Progreso Entrega</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in req.detalles.all %}
+                            <tr>
+                                <td>{{ item.material.descripcion }} <small class="text-muted">({{ item.material.unidad_medida }})</small></td>
+                                <td class="text-center fw-bold">{{ item.cantidad_solicitada|floatformat:2 }}</td>
+                                
+                                <!-- Columna Ingresado (Azul) -->
+                                <td class="text-center text-primary fw-bold">
+                                    {{ item.cantidad_ingresada|floatformat:2 }}
+                                    {% if item.cantidad_ingresada < item.cantidad_solicitada %}
+                                        <i class="fas fa-clock text-warning small" title="Falta llegada de proveedor"></i>
+                                    {% else %}
+                                        <i class="fas fa-check text-success small"></i>
+                                    {% endif %}
+                                </td>
+
+                                <!-- Columna Despachado (Verde) -->
+                                <td class="text-center text-success fw-bold">{{ item.cantidad_atendida|floatformat:2 }}</td>
+                                
+                                <td class="text-center text-danger">{{ item.cantidad_pendiente|floatformat:2 }}</td>
+                                <td class="align-middle">
+                                    {% if item.cantidad_solicitada > 0 %}
+                                        {% widthratio item.cantidad_atendida item.cantidad_solicitada 100 as porcentaje %}
+                                    {% else %}
+                                        {% with porcentaje="0" %}{% endwith %} <!-- Evitar división por cero -->
+                                    {% endif %}
+                                    
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar {% if porcentaje == '100' %}bg-success{% else %}bg-warning text-dark{% endif %}"
+                                             role="progressbar" 
+                                             style="width: {{ porcentaje }}%;" 
+                                             aria-valuenow="{{ porcentaje|default:'0' }}" aria-valuemin="0" aria-valuemax="100">
+                                            {{ porcentaje }}%
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Historial de Salidas (Atenciones) -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-secondary">Historial de Despachos (Salidas)</h6>
+    </div>
+    <div class="card-body">
+        {% if salidas %}
+            <ul class="list-group">
+                {% for salida in salidas %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>{{ salida.fecha|date:"d/m/Y H:i" }}</strong> - 
+                        <a href="{% url 'generar_vale_pdf' salida.id %}" target="_blank">{{ salida.nota_ingreso }}</a>
+                        <span class="text-muted">({{ salida.creado_por.username }})</span>
+                    </div>
+                    <span class="badge bg-primary rounded-pill">Ver Vale PDF</span>
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted text-center my-3">Aún no se han realizado despachos para este requerimiento.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Kardex: {{ material.descripcion }}{% endblock %}
+
+{% block header %}
+<a href="{% url 'inventario_list' %}" class="text-decoration-none text-muted fs-4 me-2"><i class="fas fa-arrow-left"></i></a>
+Historial: {{ material.descripcion }}
+{% endblock %}
+
+{% block content %}
+<div class="card shadow border-left-primary">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold text-primary">
+            Movimientos en {{ almacen.nombre }}
+        </h6>
+        <a href="{% url 'exportar_kardex_excel' almacen.id material.id %}" class="btn btn-sm btn-success">
+            <i class="fas fa-file-excel me-1"></i> Descargar Excel
+        </a>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Tipo Operación</th>
+                        <th>Documento</th>
+                        <th class="text-center">Entrada</th>
+                        <th class="text-center">Salida</th>
+                        <th>Usuario</th>
+                        <th>PDF</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for det in movimientos %}
+                    <tr>
+                        <td>{{ det.movimiento.fecha|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            <span class="badge 
+                                {% if det.es_ingreso %}bg-success{% else %}bg-danger{% endif %}">
+                                {{ det.movimiento.get_tipo_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="fw-bold text-dark">{{ det.movimiento.nota_ingreso|default:"-" }}</div>
+                            {% if det.movimiento.documento_referencia %}
+                                <small class="text-muted">{{ det.movimiento.documento_referencia }}</small>
+                            {% endif %}
+                        </td>
+                        
+                        <td class="text-center fw-bold text-success">
+                            {% if det.cantidad_entrada > 0 %}
+                                +{{ det.cantidad_entrada }}
+                            {% endif %}
+                        </td>
+                        <td class="text-center fw-bold text-danger">
+                            {% if det.cantidad_salida > 0 %}
+                                -{{ det.cantidad_salida }}
+                            {% endif %}
+                        </td>
+                        
+                        <td class="small">{{ det.movimiento.creado_por.username }}</td>
+                        <td class="text-center">
+                            <a href="{% url 'generar_vale_pdf' det.movimiento.id %}" target="_blank" class="text-secondary">
+                                <i class="fas fa-file-pdf"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center">Sin movimientos registrados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

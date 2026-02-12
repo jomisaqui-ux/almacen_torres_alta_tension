@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card border-danger shadow">
+                <div class="card-header bg-danger text-white">
+                    <h4 class="mb-0">⚠️ Zona de Peligro: Reiniciar Base de Datos</h4>
+                </div>
+                <div class="card-body text-center">
+                    <p class="lead text-danger">
+                        <strong>¡ADVERTENCIA!</strong>
+                    </p>
+                    <p>
+                        Esta acción eliminará permanentemente:
+                        <ul class="text-start">
+                            <li>Todos los Movimientos (Ingresos/Salidas).</li>
+                            <li>Todo el Stock Físico y Costos (PMP).</li>
+                            <li>Todos los Requerimientos y Pedidos.</li>
+                        </ul>
+                        <br>
+                        Los <strong>Materiales, Proyectos y Usuarios NO se borrarán.</strong>
+                    </p>
+                    
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Confirma tu contraseña de Administrador:</label>
+                            <input type="password" name="password" class="form-control" required placeholder="Contraseña actual">
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100">Confirmar y Borrar Todo</button>
+                        <a href="{% url 'dashboard' %}" class="btn btn-secondary w-100 mt-2">Cancelar</a>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Requerimientos - ERP Obra{% endblock %}
+{% block header %}Seguimiento de Requerimientos{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold text-primary">Listado de Pedidos de Obra</h6>
+        <!-- Aquí podrías poner un botón para crear requerimiento si tuvieras el formulario -->
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover" width="100%" cellspacing="0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código</th>
+                        <th>Fecha</th>
+                        <th>Solicitante</th>
+                        <th>Prioridad</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in requerimientos %}
+                    <tr>
+                        <td class="fw-bold text-primary">{{ req.codigo }}</td>
+                        <td>{{ req.fecha_solicitud|date:"d/m/Y" }}</td>
+                        <td>{{ req.solicitante }}</td>
+                        <td>
+                            {% if req.prioridad == 'URGENTE' %}
+                                <span class="badge bg-danger">URGENTE</span>
+                            {% elif req.prioridad == 'ALTA' %}
+                                <span class="badge bg-warning text-dark">ALTA</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ req.prioridad }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if req.estado == 'PENDIENTE' %}
+                                <span class="badge bg-danger">Pendiente</span>
+                            {% elif req.estado == 'PARCIAL' %}
+                                <span class="badge bg-warning text-dark">Atención Parcial</span>
+                            {% elif req.estado == 'TOTAL' %}
+                                <span class="badge bg-success">Completado</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Cancelado</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'requerimiento_detail' req.id %}" class="btn btn-sm btn-info" title="Ver Progreso">
+                                <i class="fas fa-eye"></i> Ver Detalle
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

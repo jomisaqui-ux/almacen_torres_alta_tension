@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+{% block header %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Datos del Personal</h6>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">DNI</label>
+                            {{ form.dni }}
+                            {{ form.dni.errors }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Nombres</label>
+                            {{ form.nombres }}
+                            {{ form.nombres.errors }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Apellidos</label>
+                            {{ form.apellidos }}
+                            {{ form.apellidos.errors }}
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Cargo</label>
+                            {{ form.cargo }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Talla Zapato</label>
+                            {{ form.talla_zapato }}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Talla Ropa</label>
+                            {{ form.talla_ropa }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        {{ form.activo }}
+                        <label class="form-check-label" for="{{ form.activo.id_for_label }}">
+                            ¿Trabajador Activo?
+                        </label>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{% url 'trabajador_list' %}" class="btn btn-secondary me-md-2">Cancelar</a>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

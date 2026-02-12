@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ titulo }}{% endblock %}
+{% block header %}{{ titulo }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">Código del Kit</label>
+                        {{ form.codigo }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nombre</label>
+                        {{ form.nombre }}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Descripción</label>
+                        {{ form.descripcion }}
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Guardar Kit</button>
+                        <a href="{% url 'kit_list' %}" class="btn btn-secondary">Cancelar</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

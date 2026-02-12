@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Ficha: {{ activo.codigo }}{% endblock %}
+{% block header %}Hoja de Vida del Activo{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Ficha Técnica -->
+    <div class="col-md-4 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Datos del Equipo</h6>
+                <a href="{% url 'activo_update' activo.id %}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-pen"></i> Editar
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="text-center mb-4">
+                    {% if activo.foto %}
+                        <img src="{{ activo.foto.url }}" class="img-fluid rounded mb-2" style="max-height: 200px;" alt="{{ activo.nombre }}">
+                    {% else %}
+                        <div class="rounded-circle bg-warning text-dark d-inline-flex justify-content-center align-items-center" style="width: 80px; height: 80px; font-size: 2rem;">
+                            <i class="fas fa-tools"></i>
+                        </div>
+                    {% endif %}
+                    <h5 class="mt-2 font-weight-bold">{{ activo.nombre }}</h5>
+                    <span class="badge bg-secondary">{{ activo.codigo }}</span>
+                </div>
+                
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>Marca:</strong> <span>{{ activo.marca|default:"-" }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>Modelo:</strong> <span>{{ activo.modelo|default:"-" }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>Serie:</strong> <span class="text-muted">{{ activo.serie|default:"S/N" }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between">
+                        <strong>Estado:</strong> 
+                        {% if activo.estado == 'DISPONIBLE' %}
+                            <span class="badge bg-success">Disponible</span>
+                        {% elif activo.estado == 'ASIGNADO' %}
+                            <span class="badge bg-warning text-dark">En Uso</span>
+                        {% else %}
+                            <span class="badge bg-danger">{{ activo.get_estado_display }}</span>
+                        {% endif %}
+                    </li>
+                    {% if activo.trabajador_asignado %}
+                    <li class="list-group-item bg-light">
+                        <strong>Responsable Actual:</strong><br>
+                        <i class="fas fa-user me-2"></i> {{ activo.trabajador_asignado }}
+                    </li>
+                    {% endif %}
+                    
+                    {% if pertenece_a_kit %}
+                    <li class="list-group-item bg-light">
+                        <strong>Pertenece al Kit:</strong><br>
+                        <i class="fas fa-box me-2"></i> {{ pertenece_a_kit.nombre }} ({{ pertenece_a_kit.codigo }})
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historial de Asignaciones -->
+    <div class="col-md-8 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header py-3 bg-secondary text-white">
+                <h6 class="m-0 font-weight-bold"><i class="fas fa-history me-2"></i>Historial de Asignaciones</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Fecha Entrega</th>
+                                <th>Trabajador</th>
+                                <th>Fecha Devolución</th>
+                                <th>Observaciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for mov in historial %}
+                            <tr>
+                                <td>{{ mov.fecha_asignacion|date:"d/m/Y H:i" }}</td>
+                                <td class="fw-bold">{{ mov.trabajador }}</td>
+                                <td>{{ mov.fecha_devolucion|date:"d/m/Y H:i"|default:"-" }}</td>
+                                <td class="small">{{ mov.observacion_entrega }} / {{ mov.observacion_devolucion }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-4">Este equipo nunca ha sido asignado.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

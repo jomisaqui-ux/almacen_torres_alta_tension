@@ -1,0 +1,25 @@
+# Entornos virtuales
+venv/
+env/
+.env
+
+# Python y Django
+*.pyc
+__pycache__/
+db.sqlite3
+
+# Archivos de IDE
+.vscode/
+.idea/
+
+# Archivos estáticos y media (uploads de usuarios)
+# static/  <-- Descomentar si usas collectstatic y no quieres subirlo
+media/
+
+# Logs y utilitarios
+*.log
+generar_contexto.py
+contexto_proyecto_completo.txt
+
+# Migraciones (Mantenemos los archivos, ignoramos cache)
+*/migrations/__pycache__/

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+{% block header %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Datos del Equipo / Herramienta</h6>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <!-- Bloque para mostrar errores de validación -->
+                    {% if form.errors %}
+                        <div class="alert alert-danger">
+                            <ul class="mb-0">
+                                {% for field in form %}
+                                    {% for error in field.errors %}
+                                        <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                                    {% endfor %}
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% endif %}
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Código Interno</label>
+                            {{ form.codigo }}
+                            {{ form.codigo.errors }}
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Nombre / Descripción</label>
+                            {{ form.nombre }}
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Marca</label>
+                            {{ form.marca }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Modelo</label>
+                            {{ form.modelo }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Serie Fabricante</label>
+                            {{ form.serie }}
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Estado Actual</label>
+                            {{ form.estado }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Fecha Compra</label>
+                            {{ form.fecha_compra }}
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Valor Compra (S/.)</label>
+                            {{ form.valor_compra }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Fotografía</label>
+                        {{ form.foto }}
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{% url 'activo_list' %}" class="btn btn-secondary me-md-2">Cancelar</a>
+                        <button type="submit" class="btn btn-primary">Guardar Activo</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
