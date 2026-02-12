@@ -128,10 +128,6 @@ class DetalleMovimientoForm(forms.ModelForm):
             ('STOCK_LIBRE', '--- Sin Requerimiento (Stock Libre) ---'),
         ]
         
-        # La opción FIFO solo tiene sentido en Ingresos
-        if tipo_accion == 'ingreso':
-            choices.append(('FIFO', '--- Asignación Automática (FIFO) ---'))
-            
         # Agregamos los requerimientos reales
         for req in qs:
             choices.append((str(req.id), str(req)))
@@ -146,7 +142,7 @@ class DetalleMovimientoForm(forms.ModelForm):
             elif self.instance.requerimiento:
                 self.fields['seleccion_requerimiento'].initial = str(self.instance.requerimiento.id)
             else:
-                self.fields['seleccion_requerimiento'].initial = 'FIFO'
+                self.fields['seleccion_requerimiento'].initial = 'STOCK_LIBRE'
         else:
             self.fields['seleccion_requerimiento'].initial = 'STOCK_LIBRE' # Por defecto
 
@@ -166,9 +162,6 @@ class DetalleMovimientoForm(forms.ModelForm):
         if val == 'STOCK_LIBRE':
             instance.requerimiento = None
             instance.es_stock_libre = True
-        elif val == 'FIFO':
-            instance.requerimiento = None
-            instance.es_stock_libre = False
         elif val:
             # Es un UUID de Requerimiento
             instance.requerimiento = Requerimiento.objects.get(id=val)

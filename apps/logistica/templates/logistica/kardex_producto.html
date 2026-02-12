@@ -25,6 +25,7 @@ Historial: {{ material.descripcion }}
                         <th>Fecha</th>
                         <th>Tipo Operación</th>
                         <th>Documento</th>
+                        <th>Asignación / Destino</th>
                         <th class="text-center">Entrada</th>
                         <th class="text-center">Salida</th>
                         <th>Usuario</th>
@@ -48,6 +49,14 @@ Historial: {{ material.descripcion }}
                             {% endif %}
                         </td>
                         
+                        <td>
+                            {% if det.asignacion_visual == 'STOCK LIBRE' %}
+                                <span class="badge bg-light text-secondary border">STOCK LIBRE</span>
+                            {% else %}
+                                <span class="fw-bold text-primary"><i class="fas fa-clipboard-list"></i> {{ det.asignacion_visual }}</span>
+                            {% endif %}
+                        </td>
+                        
                         <td class="text-center fw-bold text-success">
                             {% if det.cantidad_entrada > 0 %}
                                 +{{ det.cantidad_entrada }}
@@ -67,7 +76,7 @@ Historial: {{ material.descripcion }}
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="7" class="text-center">Sin movimientos registrados.</td></tr>
+                    <tr><td colspan="8" class="text-center">Sin movimientos registrados.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

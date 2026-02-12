@@ -189,6 +189,16 @@ def kardex_producto(request, almacen_id, material_id):
         elif es_salida:
             saldo_actual += detalle.cantidad
             
+        # D. Determinar etiqueta de Asignación (Para mostrar en tabla)
+        if detalle.es_stock_libre:
+            detalle.asignacion_visual = "STOCK LIBRE"
+        elif detalle.requerimiento:
+            detalle.asignacion_visual = f"{detalle.requerimiento.codigo}"
+        elif mov.requerimiento:
+            detalle.asignacion_visual = f"{mov.requerimiento.codigo}"
+        else:
+            detalle.asignacion_visual = "STOCK LIBRE"
+
         movimientos_visuales.append(detalle)
 
     context = {
@@ -591,7 +601,7 @@ def exportar_kardex_excel(request, almacen_id, material_id):
     ws.append([]) # Espacio
 
     # Encabezados Tabla
-    headers = ["Fecha", "Tipo Operación", "Documento", "Entrada", "Salida", "Saldo", "Usuario"]
+    headers = ["Fecha", "Tipo Operación", "Documento", "Asignación / Destino", "Entrada", "Salida", "Saldo", "Usuario"]
     ws.append(headers)
     
     # Estilo Encabezado
@@ -627,12 +637,22 @@ def exportar_kardex_excel(request, almacen_id, material_id):
         entrada = detalle.cantidad if es_ingreso else 0
         salida = detalle.cantidad if es_salida else 0
         
+        # Lógica de visualización de asignación
+        asignacion_str = "STOCK LIBRE"
+        if detalle.es_stock_libre:
+            asignacion_str = "STOCK LIBRE"
+        elif detalle.requerimiento:
+            asignacion_str = detalle.requerimiento.codigo
+        elif mov.requerimiento:
+            asignacion_str = mov.requerimiento.codigo
+
         # Guardamos en lista temporal para invertir el orden si quisiéramos, 
         # pero aquí lo agregamos directo y calculamos saldo hacia atrás
         rows.append([
             mov.fecha.strftime("%d/%m/%Y %H:%M"),
             mov.get_tipo_display(),
             f"{mov.nota_ingreso or ''} {mov.documento_referencia or ''}",
+            asignacion_str,
             entrada,
             salida,
             saldo_actual,
