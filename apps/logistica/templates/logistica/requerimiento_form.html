@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    #resultados_busqueda {
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1050;
+        display: none;
+    }
+    .item-resultado { cursor: pointer; }
+    .item-resultado:hover { background-color: #f8f9fa; color: #0d6efd; }
+    .text-codigo { color: #0d6efd; }
+    .item-resultado.active { background-color: #198754 !important; color: white !important; }
+    .item-resultado.active .text-codigo { color: white !important; }
+    .item-resultado.active small { color: #e0e0e0 !important; }
+</style>
+{% endblock %}
+
+{% block header %}
+    <a href="{% url 'requerimiento_list' %}" class="text-decoration-none text-muted fs-4 me-2"><i class="fas fa-arrow-left"></i></a>
+    {{ titulo }}
+{% endblock %}
+
+{% block content %}
+<form method="post">
+    {% csrf_token %}
+    
+    <div class="card mb-4 border-top-primary shadow-sm">
+        <div class="card-body bg-light">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Solicitante</label>
+                    {{ form.solicitante }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Fecha Solicitud</label>
+                    {{ form.fecha_solicitud }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Fecha Necesaria</label>
+                    {{ form.fecha_necesaria }}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Prioridad</label>
+                    {{ form.prioridad }}
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label fw-bold small text-uppercase text-muted">Observaciones</label>
+                    {{ form.observacion }}
+                </div>
+            </div>
+
+            <!-- DATALIST PARA AUTOCOMPLETADO DE SOLICITANTE -->
+            <datalist id="list-trabajadores">
+                {% for t in trabajadores_disponibles %}
+                    <option value="{{ t.nombres }} {{ t.apellidos }} ({{ t.dni }})"></option>
+                {% endfor %}
+            </datalist>
+        </div>
+    </div>
+
+    <div class="card mb-4 shadow">
+        <div class="card-header bg-dark text-white">
+            <i class="fas fa-list-ul me-1"></i> Lista de Materiales a Pedir
+        </div>
+        
+        <!-- BUSCADOR -->
+        <div class="card-body bg-light border-bottom p-3">
+            <label class="form-label fw-bold text-primary mb-1"><i class="fas fa-search me-1"></i> Buscar Material:</label>
+            <div class="position-relative">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" id="input_buscar_material" class="form-control" placeholder="Escriba código o nombre..." autocomplete="off">
+                    <button class="btn btn-outline-secondary" type="button" id="btn_limpiar_busqueda"><i class="fas fa-times"></i></button>
+                </div>
+                <div id="resultados_busqueda" class="list-group position-absolute w-100 shadow border-top-0"></div>
+            </div>
+        </div>
+
+        <div class="card-body p-0">
+            {{ formset.management_form }}
+            <table class="table table-striped mb-0">
+                <thead>
+                    <tr>
+                        <th width="60%">Material</th>
+                        <th width="30%">Cantidad Solicitada</th>
+                        <th width="10%"></th>
+                    </tr>
+                </thead>
+                <tbody id="form-list">
+                    {% for form in formset %}
+                    <tr class="item-row">
+                        {{ form.id }}
+                        {{ form.material }}
+                        <td>
+                            <div class="fw-bold material-nombre">
+                                {% if form.instance.pk %}{{ form.instance.material.codigo }} - {{ form.instance.material.descripcion }}{% endif %}
+                            </div>
+                            <div class="small text-muted material-unidad">
+                                {% if form.instance.pk %}{{ form.instance.material.unidad_medida }}{% endif %}
+                            </div>
+                        </td>
+                        <td>{{ form.cantidad_solicitada }}</td>
+                        <td class="text-center align-middle">
+                            <div class="d-none">{{ form.DELETE }}</div>
+                            <button type="button" class="btn btn-outline-danger btn-sm btn-eliminar-fila"><i class="fas fa-trash-alt"></i></button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            <div id="empty-message" class="text-center py-4 text-muted {% if formset|length > 0 %}d-none{% endif %}">
+                <i class="fas fa-arrow-up mb-2"></i><br>Utilice el buscador para agregar materiales.
+            </div>
+        </div>
+    </div>
+
+    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+        <a href="{% url 'requerimiento_list' %}" class="btn btn-secondary">Cancelar</a>
+        <button type="submit" class="btn btn-primary btn-lg px-5">
+            <i class="fas fa-save me-2"></i> {{ boton_texto }}
+        </button>
+    </div>
+</form>
+
+<!-- Template oculto para nuevas filas -->
+<div id="empty-form" style="display:none;">
+    <table>
+        <tr class="item-row">
+            {{ formset.empty_form.id }}
+            {{ formset.empty_form.material }}
+            <td>
+                <div class="fw-bold material-nombre"></div>
+                <div class="small text-muted material-unidad"></div>
+            </td>
+            <td>{{ formset.empty_form.cantidad_solicitada }}</td>
+            <td class="text-center align-middle">
+                <div class="d-none">{{ formset.empty_form.DELETE }}</div>
+                <button type="button" class="btn btn-outline-danger btn-sm btn-eliminar-fila"><i class="fas fa-trash-alt"></i></button>
+            </td>
+        </tr>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script>
+    const MATERIALES_DISPONIBLES = [
+        {% for material in materiales_disponibles %}
+        {
+            id: "{{ material.id }}",
+            texto: "{{ material.codigo }} - {{ material.descripcion|escapejs }}",
+            unidad: "{{ material.unidad_medida }}"
+        },
+        {% endfor %}
+    ];
+
+    $(document).ready(function() {
+        const $inputBusqueda = $('#input_buscar_material');
+        const $listaResultados = $('#resultados_busqueda');
+        let selectedIndex = -1;
+
+        // Vincular Solicitante con Datalist de Trabajadores
+        $('#id_solicitante').attr('list', 'list-trabajadores');
+        $('#id_solicitante').attr('placeholder', 'Buscar por DNI o Nombre...');
+
+        // Buscador
+        $inputBusqueda.on('input', function() {
+            let query = $(this).val().toLowerCase().trim();
+            $listaResultados.empty().hide();
+            selectedIndex = -1; // Resetear selección al escribir
+            if (query.length < 1) return;
+
+            let resultados = MATERIALES_DISPONIBLES.filter(m => m.texto.toLowerCase().includes(query));
+
+            if (resultados.length > 0) {
+                resultados.slice(0, 10).forEach(m => {
+                    let item = `<a href="#" class="list-group-item list-group-item-action item-resultado" 
+                                   data-id="${m.id}" data-unidad="${m.unidad}" data-texto="${m.texto}">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1 text-codigo fw-bold">${m.texto.split(' - ')[0]}</h6>
+                                        <small class="text-muted">${m.unidad}</small>
+                                    </div>
+                                    <p class="mb-1 small">${m.texto.split(' - ')[1] || ''}</p>
+                                </a>`;
+                    $listaResultados.append(item);
+                });
+                $listaResultados.show();
+            } else {
+                $listaResultados.append('<div class="list-group-item text-muted small">No se encontraron materiales.</div>').show();
+            }
+        });
+
+        // Navegación con Teclado (Flechas, Enter, Tab)
+        $inputBusqueda.on('keydown', function(e) {
+            let items = $listaResultados.find('.item-resultado');
+            if (items.length === 0) {
+                if (e.key === 'Enter') e.preventDefault(); // Evitar submit del form si no hay resultados
+                return;
+            }
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex++;
+                if (selectedIndex >= items.length) selectedIndex = 0; // Loop al inicio
+                updateSelection(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex--;
+                if (selectedIndex < 0) selectedIndex = items.length - 1; // Loop al final
+                updateSelection(items);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedIndex > -1) items.eq(selectedIndex).click();
+            } else if (e.key === 'Tab') {
+                if (selectedIndex > -1) {
+                    e.preventDefault();
+                    items.eq(selectedIndex).click();
+                }
+            } else if (e.key === 'Escape') {
+                $inputBusqueda.val(''); // Limpiar texto
+                $listaResultados.hide();
+                selectedIndex = -1;
+            }
+        });
+
+        function updateSelection(items) {
+            items.removeClass('active');
+            let current = items.eq(selectedIndex);
+            current.addClass('active');
+            current[0].scrollIntoView({ block: 'nearest' }); // Scroll automático si la lista es larga
+        }
+
+        // Agregar Item
+        $(document).on('click', '.item-resultado', function(e) {
+            e.preventDefault();
+            let materialId = $(this).data('id');
+            let textoMaterial = $(this).data('texto');
+            let unidad = $(this).data('unidad');
+
+            // Validar duplicados
+            let existe = false;
+            $('#form-list input[name$="-material"]').each(function() {
+                if ($(this).val() === materialId && !$(this).closest('tr').is(':hidden')) {
+                    alert('Este material ya está en la lista.');
+                    existe = true;
+                    return false;
+                }
+            });
+            if (existe) {
+                $inputBusqueda.val('').focus();
+                $listaResultados.hide();
+                return;
+            }
+
+            let totalFormsInput = $('#id_detalles-TOTAL_FORMS');
+            let formCount = parseInt(totalFormsInput.val());
+            let templateHtml = $('#empty-form table tbody').html() || $('#empty-form table').html();
+            let newRowHtml = templateHtml.replace(/__prefix__/g, formCount);
+            let $newRow = $(newRowHtml);
+            
+            $newRow.find('input[name$="-material"]').val(materialId);
+            $newRow.find('.material-nombre').text(textoMaterial);
+            $newRow.find('.material-unidad').text(unidad);
+
+            $('#form-list').append($newRow);
+            totalFormsInput.val(formCount + 1);
+            $('#empty-message').addClass('d-none');
+            
+            $inputBusqueda.val('').focus();
+            $listaResultados.empty().hide(); // Vaciar lista para evitar selección fantasma
+            selectedIndex = -1; // Resetear índice
+        });
+
+        // Eliminar Item
+        $(document).on('click', '.btn-eliminar-fila', function() {
+            let row = $(this).closest('tr');
+            if (row.find('input[name$="-id"]').val()) {
+                row.find('input[name$="-DELETE"]').prop('checked', true);
+                row.hide();
+            } else {
+                row.remove();
+            }
+            if ($('#form-list tr.item-row:visible').length === 0) $('#empty-message').removeClass('d-none');
+        });
+
+        // Cerrar buscador al hacer clic fuera
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.position-relative').length) $listaResultados.hide();
+        });
+        
+        $('#btn_limpiar_busqueda').click(function() {
+            $inputBusqueda.val('').focus();
+            $listaResultados.hide();
+        });
+    });
+</script>
+{% endblock %}

@@ -1,7 +1,7 @@
 from django import forms
 from django.forms import inlineformset_factory
 from django.db.models import F
-from .models import Movimiento, DetalleMovimiento, Requerimiento
+from .models import Movimiento, DetalleMovimiento, Requerimiento, DetalleRequerimiento
 
 # ==========================================
 # 1. FORMULARIO DE LA CABECERA (Movimiento)
@@ -101,8 +101,8 @@ class DetalleMovimientoForm(forms.ModelForm):
         model = DetalleMovimiento
         fields = ['material', 'cantidad', 'costo_unitario'] 
         widgets = {
-            # --- AQUÍ AGREGAMOS LA CLASE MÁGICA ---
-            'material': forms.Select(attrs={'class': 'django-select2'}), 
+            # Usamos HiddenInput para evitar renderizar el select pesado en cada fila
+            'material': forms.HiddenInput(),
             
             'cantidad': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Cant.'}),
             'costo_unitario': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Precio S/.'}),
@@ -182,6 +182,42 @@ DetalleMovimientoFormSet = inlineformset_factory(
     Movimiento,           # Modelo Padre
     DetalleMovimiento,    # Modelo Hijo
     form=DetalleMovimientoForm, # <--- IMPORTANTE: Usar el formulario del HIJO
-    extra=1,
+    extra=0,
+    can_delete=True
+)
+
+# ==========================================
+# 4. FORMULARIOS DE REQUERIMIENTOS (NUEVO)
+# ==========================================
+
+class RequerimientoForm(forms.ModelForm):
+    class Meta:
+        model = Requerimiento
+        fields = ['solicitante', 'fecha_solicitud', 'fecha_necesaria', 'prioridad', 'observacion']
+        widgets = {
+            'fecha_solicitud': forms.DateInput(attrs={'type': 'date'}),
+            'fecha_necesaria': forms.DateInput(attrs={'type': 'date'}),
+            'observacion': forms.Textarea(attrs={'rows': 2}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.update({'class': 'form-control'})
+
+class DetalleRequerimientoForm(forms.ModelForm):
+    class Meta:
+        model = DetalleRequerimiento
+        fields = ['material', 'cantidad_solicitada']
+        widgets = {
+            'material': forms.HiddenInput(),
+            'cantidad_solicitada': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Cant.'}),
+        }
+
+DetalleRequerimientoFormSet = inlineformset_factory(
+    Requerimiento,
+    DetalleRequerimiento,
+    form=DetalleRequerimientoForm,
+    extra=0,
     can_delete=True
 )

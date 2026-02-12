@@ -3,65 +3,25 @@
 {% block title %}{{ titulo }}{% endblock %}
 
 {% block extra_css %}
-<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" />
-
 <style>
-    /* 1. CORRECCIÓN DEL "DOBLE TEXTO" (FANTASMA) */
-    select.django-select2 {
-        position: absolute !important;
-        width: 1px !important;
-        height: 1px !important;
-        padding: 0 !important;
-        margin: -1px !important;
-        overflow: hidden !important;
-        clip: rect(0, 0, 0, 0) !important;
-        white-space: nowrap !important;
-        border: 0 !important;
-        background: none !important;
-        appearance: none !important;
-        opacity: 0 !important;
-        z-index: -1000 !important;
+    /* Estilos para el buscador predictivo manual */
+    #resultados_busqueda {
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1050; /* Por encima de todo */
+        display: none; /* Oculto por defecto */
     }
-
-    /* 2. AJUSTES CAJA VISIBLE */
-    .select2-container .select2-selection--single {
-        height: 38px !important;
-        border: 1px solid #ced4da !important;
-        display: flex !important;
-        align-items: center !important;
-        background-color: #fff !important;
+    .item-resultado {
+        cursor: pointer;
     }
-    
-    .select2-container--bootstrap-5 .select2-selection {
-        border-radius: 0.375rem;
+    .item-resultado:hover {
+        background-color: #f8f9fa;
+        color: #0d6efd;
     }
-    
-    .select2-container {
-        width: 100% !important;
-        display: block !important;
-    }
-
-    /* 3. SOLUCIÓN FONDO TRANSPARENTE (ESPECÍFICA) */
-    .select2-container--bootstrap-5 .select2-dropdown {
-        z-index: 9999 !important;
-        background-color: #ffffff !important;
-        border: 1px solid #ced4da !important;
-        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
-    }
-
-    .select2-container--bootstrap-5 .select2-search--dropdown,
-    .select2-container--bootstrap-5 .select2-results,
-    .select2-container--bootstrap-5 .select2-results__options,
-    .select2-container--bootstrap-5 .select2-results__option {
-        background-color: #ffffff !important;
-        color: #212529 !important;
-    }
-
-    .select2-container--bootstrap-5 .select2-results__option--highlighted[aria-selected] {
-        background-color: #0d6efd !important;
-        color: #ffffff !important;
-    }
+    .text-codigo { color: #0d6efd; } /* Azul estándar para el código */
+    .item-resultado.active { background-color: #198754 !important; color: white !important; } /* Verde forzado */
+    .item-resultado.active .text-codigo { color: white !important; } /* Forzar texto blanco al seleccionar */
+    .item-resultado.active small { color: #e0e0e0 !important; }
 </style>
 {% endblock %}
 
@@ -174,23 +134,45 @@
             {% for field in form %}
                 {% if field.is_hidden %}{{ field }}{% endif %}
             {% endfor %}
+
+            <!-- DATALIST PARA AUTOCOMPLETADO DE SOLICITANTE -->
+            <datalist id="list-trabajadores">
+                {% for t in trabajadores_disponibles %}
+                    <!-- Concatenamos Nombre y DNI en el value para permitir búsqueda por ambos campos -->
+                    <option value="{{ t.nombres }} {{ t.apellidos }} ({{ t.dni }})"></option>
+                {% endfor %}
+            </datalist>
         </div>
     </div>
 
     <div class="card mb-4 shadow">
-        <div class="card-header bg-dark text-white d-flex justify-content-between">
-            <span>Materiales</span>
-            <button type="button" class="btn btn-sm btn-outline-light" id="add-item"><i class="fas fa-plus"></i> Agregar</button>
+        <div class="card-header bg-dark text-white">
+            <i class="fas fa-boxes me-1"></i> Detalle de Materiales
         </div>
+        
+        <!-- BUSCADOR CENTRAL (AUTOFILTRO) -->
+        <div class="card-body bg-light border-bottom p-3">
+            <label class="form-label fw-bold text-primary mb-1"><i class="fas fa-search me-1"></i> Buscar y Agregar Material:</label>
+            <div class="position-relative">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                    <input type="text" id="input_buscar_material" class="form-control" placeholder="Escriba código o nombre del material..." autocomplete="off">
+                    <button class="btn btn-outline-secondary" type="button" id="btn_limpiar_busqueda"><i class="fas fa-times"></i></button>
+                </div>
+                <!-- Lista de resultados flotante -->
+                <div id="resultados_busqueda" class="list-group position-absolute w-100 shadow border-top-0"></div>
+            </div>
+        </div>
+
         <div class="card-body p-0">
             {{ formset.management_form }}
             <table class="table table-striped mb-0" id="items-table">
                 <thead>
                     <tr>
-                        <th width="35%">Material</th>
+                        <th width="40%">Material</th>
                         <th width="10%">Cant.</th>
-                        <th width="15%">Costo (S/.)</th> 
-                        <th width="35%">Asignar a Req. / Stock Libre</th>
+                        <th width="15%">Costo (S/.)</th>
+                        <th width="30%">Asignar a Req. / Stock Libre</th>
                         <th width="10%"></th>
                     </tr>
                 </thead>
@@ -198,18 +180,40 @@
                     {% for form in formset %}
                     <tr class="item-row">
                         {{ form.id }}
-                        <td>{{ form.material }}</td>
+                        {{ form.material }} <!-- Input Oculto con el ID -->
+                        <td>
+                            <!-- Texto visible solo para lectura -->
+                            <div class="fw-bold material-nombre">
+                                {% if form.instance.pk or form.instance.material %}
+                                    {{ form.instance.material.codigo }} - {{ form.instance.material.descripcion }}
+                                {% endif %}
+                            </div>
+                            <div class="small text-muted material-unidad">
+                                {% if form.instance.pk or form.instance.material %}
+                                    {{ form.instance.material.unidad_medida }}
+                                {% endif %}
+                            </div>
+                        </td>
                         <td>{{ form.cantidad }}</td>
                         <td>{{ form.costo_unitario }}</td>
                         <td>{{ form.seleccion_requerimiento }}</td>
-                        <td class="text-center">{{ form.DELETE }}</td>
+                        <td class="text-center align-middle">
+                            <div class="d-none">{{ form.DELETE }}</div> <!-- Checkbox oculto de Django -->
+                            <button type="button" class="btn btn-outline-danger btn-sm btn-eliminar-fila" title="Eliminar fila"><i class="fas fa-trash-alt"></i></button>
+                        </td>
                     </tr>
                     {% if form.errors %}
-                    <tr><td colspan="4" class="text-danger small">{{ form.errors }}</td></tr>
+                    <tr class="error-row"><td colspan="6" class="text-danger small bg-danger bg-opacity-10"><i class="fas fa-exclamation-triangle me-1"></i> {{ form.errors }}</td></tr>
                     {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
+            
+            <!-- Mensaje si la tabla está vacía -->
+            <div id="empty-message" class="text-center py-4 text-muted {% if formset|length > 0 %}d-none{% endif %}">
+                <i class="fas fa-arrow-up mb-2"></i><br>
+                Utilice el buscador de arriba para agregar materiales.
+            </div>
         </div>
     </div>
 
@@ -224,11 +228,19 @@
     <table>
         <tr class="item-row">
             {{ formset.empty_form.id }}
-            <td>{{ formset.empty_form.material }}</td>
+            {{ formset.empty_form.material }}
+            <td>
+                <!-- Placeholders para JS -->
+                <div class="fw-bold material-nombre"></div>
+                <div class="small text-muted material-unidad"></div>
+            </td>
             <td>{{ formset.empty_form.cantidad }}</td>
             <td>{{ formset.empty_form.costo_unitario }}</td>
             <td>{{ formset.empty_form.seleccion_requerimiento }}</td>
-            <td class="text-center">{{ formset.empty_form.DELETE }}</td>
+            <td class="text-center align-middle">
+                <div class="d-none">{{ formset.empty_form.DELETE }}</div>
+                <button type="button" class="btn btn-outline-danger btn-sm btn-eliminar-fila"><i class="fas fa-trash-alt"></i></button>
+            </td>
         </tr>
     </table>
 </div>
@@ -236,12 +248,29 @@
 
 {% block extra_js %}
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script>
     // --- VARIABLES GLOBALES ---
     const ALMACEN_ID_URL = "{{ almacen.id }}"; // El almacén en el que estamos parados
     const TIPO_ACCION = "{{ titulo }}".toUpperCase(); // Para saber si entramos a INGRESO o SALIDA
+
+    // Mapa de validación: { 'uuid_req': ['uuid_mat1', 'uuid_mat2'] }
+    const REQS_MATERIALES = JSON.parse('{{ reqs_materiales_json|escapejs }}');
+
+    // Mapa inverso: { 'uuid_mat': ['uuid_req1', 'uuid_req2'] }
+    const MATS_REQS = JSON.parse('{{ mats_reqs_json|escapejs }}');
+
+    // --- CARGAR MATERIALES EN MEMORIA (Para búsqueda rápida sin plugins) ---
+    const MATERIALES_DISPONIBLES = [
+        {% for material in materiales_disponibles %}
+        {
+            id: "{{ material.id }}",
+            texto: "{{ material.codigo }} - {{ material.descripcion|escapejs }}",
+            unidad: "{{ material.unidad_medida }}",
+            codigo: "{{ material.codigo }}"
+        },
+        {% endfor %}
+    ];
 
     function toggleCampos() {
         // Obtenemos el texto de la opción seleccionada
@@ -307,11 +336,11 @@
 
     // --- LÓGICA DE VALIDACIÓN DE STOCK ---
     function validarStockFila(row) {
-        // ... (Mismo código de validación que ya tenías y funcionaba bien) ...
         const ALMACEN_ACTUAL = $('#id_almacen_origen').val() || ALMACEN_ID_URL;
-        let materialSelect = row.find('select.django-select2');
+        // Adaptación para input oculto (Buscador Central)
+        let materialInput = row.find('input[name$="-material"]');
         let cantidadInput = row.find('input[type="number"]').first(); 
-        let materialId = materialSelect.val();
+        let materialId = materialInput.val();
         let cantidadSolicitada = parseFloat(cantidadInput.val()) || 0;
 
         cantidadInput.removeClass('is-invalid');
@@ -340,21 +369,32 @@
         });
     }
 
-    // --- ACTIVAR SELECT2 (CÓDIGO QUE YA TENÍAS) ---
-    function activarSelect2(selector) {
-        if ($(selector).data('select2')) { $(selector).select2('destroy'); }
-        $(selector).css({position: 'absolute', left: '-9999px', width: '1px', height: '1px', opacity: 0});
-        $(selector).select2({
-            theme: 'bootstrap-5', width: '100%', placeholder: 'Buscar material...', allowClear: true, closeOnSelect: true
-        });
-        $(selector).on('select2:open', function () { document.querySelector('.select2-search__field').focus(); });
-        $(selector).on('select2:select', function () {
-            $(this).select2('close');
-            let row = $(this).closest('tr');
-            let cantidadInput = row.find('input[type="number"]').first();
-            if (cantidadInput.length > 0) cantidadInput.focus();
-            
-            validarStockFila(row); // Validar al seleccionar
+    // --- NUEVO: FILTRADO DE OPCIONES EN EL SELECT DE LA FILA ---
+    function filtrarOpcionesFila(row) {
+        let materialId = row.find('input[name$="-material"]').val();
+        let selectReq = row.find('select[name$="-seleccion_requerimiento"]');
+        
+        // Si no hay material, no filtramos nada (o podríamos bloquear)
+        if (!materialId) return;
+
+        // Obtenemos los requerimientos válidos para este material
+        let validReqs = MATS_REQS[materialId] || [];
+
+        // Iteramos las opciones del select
+        selectReq.find('option').each(function() {
+            let val = $(this).val();
+            // Siempre mostramos "Stock Libre" (o valor vacío)
+            if (val === 'STOCK_LIBRE' || val === '') {
+                $(this).prop('hidden', false);
+                return;
+            }
+
+            // Si el requerimiento necesita este material, lo mostramos. Si no, lo ocultamos.
+            if (validReqs.includes(val)) {
+                $(this).prop('hidden', false);
+            } else {
+                $(this).prop('hidden', true);
+            }
         });
     }
 
@@ -368,16 +408,21 @@
             
             if (reqCabecera) {
                 selectReq.val(reqCabecera);
-                selectReq.prop('disabled', true); // Bloquear por seguridad
-                selectReq.addClass('bg-light');   // Indicador visual
+                // MODIFICADO: Usamos CSS para bloquear visualmente pero permitir el envío del dato (disabled no envía POST)
+                selectReq.css({'pointer-events': 'none', 'background-color': '#e9ecef'}); 
+                selectReq.prop('tabindex', '-1'); // Evitar foco con tab
             } else {
-                selectReq.prop('disabled', false); // Desbloquear si se limpia la cabecera
-                selectReq.removeClass('bg-light');
+                // Restaurar estado
+                selectReq.css({'pointer-events': 'auto', 'background-color': ''});
+                selectReq.prop('tabindex', '');
                 
                 // Si el usuario cambió la cabecera a "Sin Requerimiento", reseteamos las filas a Stock Libre
                 if (triggeredByChange) {
                     selectReq.val('STOCK_LIBRE');
                 }
+
+                // NUEVO: Si estamos en modo libre, filtramos las opciones según el material de la fila
+                filtrarOpcionesFila($(this));
             }
         });
     }
@@ -387,28 +432,187 @@
         toggleCampos();
         $('#id_tipo').change(function() { toggleCampos(); });
 
-        // 2. Iniciar Select2
-        $('#form-list tr:visible select.django-select2').each(function() { activarSelect2(this); });
+        // 1.1 Vincular Solicitante con Datalist de Trabajadores
+        $('#id_solicitante').attr('list', 'list-trabajadores');
+        $('#id_solicitante').attr('placeholder', 'Buscar por DNI o Nombre...');
 
-        // 3. Botón Agregar
-        $('#add-item').on('click', function(e) {
+        // 2. LÓGICA DEL BUSCADOR MANUAL (Sin librerías externas)
+        const $inputBusqueda = $('#input_buscar_material');
+        const $listaResultados = $('#resultados_busqueda');
+        let selectedIndex = -1;
+
+        // Evento al escribir
+        $inputBusqueda.on('input', function() {
+            let query = $(this).val().toLowerCase().trim();
+            $listaResultados.empty().hide();
+            selectedIndex = -1; // Resetear selección al escribir
+
+            if (query.length < 1) return; // Buscar a partir de 1 letra
+
+            // Obtener filtro de requerimiento actual
+            let reqGlobal = $('#id_requerimiento').val();
+            let validos = (reqGlobal && REQS_MATERIALES[reqGlobal]) ? REQS_MATERIALES[reqGlobal] : null;
+
+            // Filtrar array en memoria (Texto + Requerimiento)
+            let resultados = MATERIALES_DISPONIBLES.filter(m => {
+                let matchTexto = m.texto.toLowerCase().includes(query);
+                // Si hay requerimiento seleccionado, el material debe estar en su lista
+                let matchReq = validos ? validos.includes(m.id) : true;
+                return matchTexto && matchReq;
+            });
+
+            // Renderizar resultados
+            if (resultados.length > 0) {
+                resultados.slice(0, 10).forEach(m => { // Mostrar máx 10 resultados
+                    let item = `<a href="#" class="list-group-item list-group-item-action item-resultado" 
+                                   data-id="${m.id}" data-unidad="${m.unidad}" data-texto="${m.texto}">
+                                    <div class="d-flex w-100 justify-content-between">
+                                        <h6 class="mb-1 text-codigo fw-bold">${m.codigo}</h6>
+                                        <small class="text-muted">${m.unidad}</small>
+                                    </div>
+                                    <p class="mb-1 small">${m.texto.split(' - ')[1] || m.texto}</p>
+                                </a>`;
+                    $listaResultados.append(item);
+                });
+                $listaResultados.show();
+            } else {
+                let msg = 'No se encontraron materiales.';
+                if (validos) {
+                    msg = 'No se encuentra el material en el Requerimiento seleccionado.';
+                }
+                $listaResultados.append('<div class="list-group-item text-muted small">' + msg + '</div>').show();
+            }
+        });
+
+        // Navegación con Teclado (Flechas, Enter, Tab)
+        $inputBusqueda.on('keydown', function(e) {
+            let items = $listaResultados.find('.item-resultado');
+            if (items.length === 0) {
+                if (e.key === 'Enter') e.preventDefault(); // Evitar submit del form si no hay resultados
+                return;
+            }
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex++;
+                if (selectedIndex >= items.length) selectedIndex = 0; // Loop al inicio
+                updateSelection(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex--;
+                if (selectedIndex < 0) selectedIndex = items.length - 1; // Loop al final
+                updateSelection(items);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedIndex > -1) items.eq(selectedIndex).click();
+            } else if (e.key === 'Tab') {
+                if (selectedIndex > -1) {
+                    e.preventDefault();
+                    items.eq(selectedIndex).click();
+                }
+            } else if (e.key === 'Escape') {
+                $inputBusqueda.val(''); // Limpiar texto
+                $listaResultados.hide();
+                selectedIndex = -1;
+            }
+        });
+
+        function updateSelection(items) {
+            items.removeClass('active');
+            let current = items.eq(selectedIndex);
+            current.addClass('active');
+            current[0].scrollIntoView({ block: 'nearest' }); // Scroll automático si la lista es larga
+        }
+
+        // Evento al hacer clic en un resultado
+        $(document).on('click', '.item-resultado', function(e) {
             e.preventDefault();
+            let materialId = $(this).data('id');
+            let textoMaterial = $(this).data('texto');
+            let unidad = $(this).data('unidad');
+
+            // Validar pertenencia al Requerimiento Global (Doble seguridad)
+            let reqGlobal = $('#id_requerimiento').val();
+            if (reqGlobal && REQS_MATERIALES[reqGlobal]) {
+                if (!REQS_MATERIALES[reqGlobal].includes(materialId)) {
+                    alert('⛔ BLOQUEO DE VALIDACIÓN\n\nEl material seleccionado NO pertenece al Requerimiento seleccionado en la cabecera.\n\nSi desea ingresar un material extra, cambie la cabecera a "Sin Requerimiento (Stock Libre)".');
+                    $inputBusqueda.val('').focus();
+                    $listaResultados.hide();
+                    return;
+                }
+            }
+
+            // Validar duplicados
+            // MODIFICADO: Solo validamos duplicados estrictos si hay un Requerimiento Global seleccionado.
+            // Si es "Stock Libre" (vacío), permitimos agregar el mismo material varias veces para distribuirlo.
+            if (reqGlobal) {
+                let existe = false;
+                $('#form-list input[name$="-material"]').each(function() {
+                    if ($(this).val() === materialId && !$(this).closest('tr').is(':hidden')) {
+                        alert('Este material ya está en la lista. Al tener un Requerimiento Global seleccionado, no se permiten duplicados.');
+                        existe = true;
+                        return false;
+                    }
+                });
+                if (existe) {
+                    $inputBusqueda.val('').focus();
+                    $listaResultados.hide();
+                    return;
+                }
+            }
+
+            // Clonar fila
             let totalFormsInput = $('#id_detalles-TOTAL_FORMS');
             let formCount = parseInt(totalFormsInput.val());
             let templateHtml = $('#empty-form table tbody').html() || $('#empty-form table').html();
             let newRowHtml = templateHtml.replace(/__prefix__/g, formCount);
             let $newRow = $(newRowHtml);
+            
+            // Rellenar datos visuales y ocultos
+            $newRow.find('input[name$="-material"]').val(materialId);
+            $newRow.find('.material-nombre').text(textoMaterial);
+            $newRow.find('.material-unidad').text(unidad);
+
+            // --- NUEVO: Obtener Precio Unitario (Costo Promedio) ---
+            let almacenRef = $('#id_almacen_origen').val() || $('#id_almacen_destino').val() || ALMACEN_ID_URL;
+            if (almacenRef && almacenRef !== '00000000-0000-0000-0000-000000000000') {
+                $.get(`/logistica/api/stock/${almacenRef}/${materialId}/`, function(data) {
+                    if (data.precio) {
+                        $newRow.find('input[name$="-costo_unitario"]').val(parseFloat(data.precio).toFixed(2));
+                    }
+                });
+            }
+            // -------------------------------------------------------
+
             $('#form-list').append($newRow);
             totalFormsInput.val(formCount + 1);
-            let $newSelect = $newRow.find('select.django-select2');
-            activarSelect2($newSelect);
-            $newSelect.select2('open');
+            
+            // UX: Ocultar mensaje vacío y enfocar cantidad
+            $('#empty-message').addClass('d-none');
+            $('#form-list tr.item-row').last().find('input[name$="-cantidad"]').focus().select();
             
             // Sincronizar la nueva fila con la cabecera si aplica
             sincronizarRequerimientos();
+
+            // Limpiar buscador
+            $inputBusqueda.val('');
+            $listaResultados.empty().hide(); // Vaciar lista para evitar selección fantasma
+            selectedIndex = -1; // Resetear índice
         });
 
-        // 4. Validar al escribir cantidad
+        // Cerrar lista si clic fuera
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.position-relative').length) {
+                $listaResultados.hide();
+            }
+        });
+
+        $('#btn_limpiar_busqueda').click(function() {
+            $inputBusqueda.val('').focus();
+            $listaResultados.hide();
+        });
+
+        // 3. Validar al escribir cantidad
         $(document).on('keyup change', 'input[type="number"]', function() {
             let row = $(this).closest('tr');
             validarStockFila(row);
@@ -417,6 +621,157 @@
         // 5. Listener para cambio en Requerimiento de Cabecera
         $('#id_requerimiento').change(function() {
             sincronizarRequerimientos(true);
+        });
+
+        // 5.1 NUEVO: Validar duplicados de destino al cambiar el select de la fila
+        $(document).on('change', 'select[name$="-seleccion_requerimiento"]', function() {
+            let selectActual = $(this);
+            let filaActual = selectActual.closest('tr');
+            let materialActual = filaActual.find('input[name$="-material"]').val();
+            let destinoActual = selectActual.val(); // ID del Req o 'STOCK_LIBRE'
+
+            // Si no hay material o destino, no validamos
+            if (!materialActual || !destinoActual) return;
+
+            let duplicado = false;
+            $('#form-list tr.item-row').each(function() {
+                let filaIteracion = $(this);
+                // Ignoramos la fila actual y las ocultas (eliminadas)
+                if (filaIteracion.is(filaActual) || filaIteracion.is(':hidden')) return;
+
+                let materialIteracion = filaIteracion.find('input[name$="-material"]').val();
+                let destinoIteracion = filaIteracion.find('select[name$="-seleccion_requerimiento"]').val();
+
+                if (materialIteracion === materialActual && destinoIteracion === destinoActual) {
+                    duplicado = true;
+                    return false; // Break loop
+                }
+            });
+
+            if (duplicado) {
+                alert('⚠️ Atención: Este material ya está asignado a ese mismo destino en otra fila.\n\nPor favor, agrupe las cantidades en una sola línea o seleccione otro destino.');
+                // Opcional: Resetear selección si se desea
+                // selectActual.val('STOCK_LIBRE'); 
+            }
+        });
+
+        // 6. BOTÓN ELIMINAR FILA (Mejorado)
+        $(document).on('click', '.btn-eliminar-fila', function() {
+            let row = $(this).closest('tr');
+            let checkboxDelete = row.find('input[name$="-DELETE"]');
+            
+            // Si la fila tiene un ID (ya existe en BD), marcamos DELETE y ocultamos
+            if (row.find('input[name$="-id"]').val()) {
+                checkboxDelete.prop('checked', true);
+                row.hide();
+                row.next('.error-row').hide(); // Ocultar mensaje de error si existe
+            } else {
+                // Si es nueva, la eliminamos del DOM
+                row.next('.error-row').remove();
+                row.remove();
+            }
+            
+            // Verificar si quedó vacía la tabla visualmente
+            let visibles = $('#form-list tr.item-row:visible').length;
+            if (visibles === 0) $('#empty-message').removeClass('d-none');
+        });
+
+        // 7. VALIDACIÓN Y LIMPIEZA AL GUARDAR (CRÍTICO PARA EVITAR ERRORES DE FILAS VACÍAS)
+        $('form').on('submit', function(e) {
+            // A. Limpieza de filas vacías (sin material)
+            $('#form-list tr.item-row').each(function() {
+                let row = $(this);
+                let materialVal = row.find('input[name$="-material"]').val();
+                let tieneId = row.find('input[name$="-id"]').val();
+                
+                // Si no tiene material seleccionado
+                if (!materialVal) {
+                    if (tieneId) {
+                        // Si existe en BD, marcar para borrar
+                        row.find('input[name$="-DELETE"]').prop('checked', true);
+                        row.hide();
+                    } else {
+                        // Si es nueva y vacía, eliminar del DOM para que no se envíe
+                        row.remove();
+                    }
+                }
+            });
+
+            // B. Reindexar Formset (Indispensable para que Django procese correctamente después de borrar)
+            let filas = $('#form-list tr.item-row');
+            $('#id_detalles-TOTAL_FORMS').val(filas.length);
+            
+            filas.each(function(index) {
+                // Actualizar name e id de todos los inputs para que sean consecutivos (0, 1, 2...)
+                $(this).find(':input').each(function() {
+                    let name = $(this).attr('name');
+                    if (name) {
+                        let newName = name.replace(/detalles-\d+-/, 'detalles-' + index + '-');
+                        $(this).attr('name', newName);
+                        $(this).attr('id', 'id_' + newName);
+                    }
+                });
+            });
+
+            // C. Validar que quede al menos una fila válida
+            let filasValidas = 0;
+            $('#form-list tr.item-row').each(function() {
+                // Contamos filas visibles que no estén marcadas para eliminar
+                if ($(this).is(':visible') && !$(this).find('input[name$="-DELETE"]').is(':checked')) {
+                    filasValidas++;
+                }
+            });
+
+            if (filasValidas === 0) {
+                e.preventDefault();
+                alert('⚠️ Error: Debe agregar al menos un material a la lista antes de guardar.');
+                return false;
+            }
+        });
+
+        // 8. NAVEGACIÓN DE FOCO (CANTIDAD -> COSTO -> SELECT -> SIGUIENTE FILA -> BUSCADOR)
+        $('#form-list').on('keydown', 'input, select', function(e) {
+            // Solo interceptamos Enter y Tab (sin Shift para permitir retroceder)
+            if ((e.key === 'Enter' || e.key === 'Tab') && !e.shiftKey) {
+                let $this = $(this);
+                let $row = $this.closest('tr');
+                let name = $this.attr('name');
+                let reqGlobal = $('#id_requerimiento').val();
+                let $nextRow = $row.nextAll('tr.item-row:visible').first(); // Buscar la siguiente fila visible
+
+                // A. Si estamos en CANTIDAD -> Ir a COSTO
+                if (name && name.includes('-cantidad')) {
+                    e.preventDefault();
+                    $row.find('input[name$="-costo_unitario"]').focus().select();
+                }
+                
+                // B. Si estamos en COSTO
+                else if (name && name.includes('-costo_unitario')) {
+                    if (reqGlobal) {
+                        // Si hay Req Global, el select está deshabilitado -> Ir a Siguiente Fila o Buscador
+                        e.preventDefault();
+                        if ($nextRow.length > 0) {
+                            $nextRow.find('input[name$="-cantidad"]').focus().select();
+                        } else {
+                            $('#input_buscar_material').focus();
+                        }
+                    } else {
+                        // Si es Stock Libre -> Ir al SELECT
+                        e.preventDefault();
+                        $row.find('select[name$="-seleccion_requerimiento"]').focus();
+                    }
+                }
+
+                // C. Si estamos en SELECT -> Ir a Siguiente Fila o Buscador
+                else if (name && name.includes('-seleccion_requerimiento')) {
+                    e.preventDefault();
+                    if ($nextRow.length > 0) {
+                        $nextRow.find('input[name$="-cantidad"]').focus().select();
+                    } else {
+                        $('#input_buscar_material').focus();
+                    }
+                }
+            }
         });
 
         // LÓGICA DE INICIO: Forzar "Stock Libre" solo en creación limpia (Nueva Operación)

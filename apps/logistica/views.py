@@ -13,11 +13,13 @@ from io import BytesIO
 import base64
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
+import json
 
 # Importamos modelos y formularios locales
 from .models import Movimiento, DetalleMovimiento, Stock, Almacen, Material, Proyecto, Requerimiento, Existencia, DetalleRequerimiento
-from .forms import MovimientoForm, DetalleMovimientoFormSet
+from .forms import MovimientoForm, DetalleMovimientoFormSet, RequerimientoForm, DetalleRequerimientoFormSet
 from .services import KardexService
+from apps.rrhh.models import Trabajador
 from apps.core.models import Configuracion
 
 # ==========================================
@@ -35,13 +37,23 @@ def generar_vale_pdf(request, movimiento_id):
     qr.save(buffer, format="PNG")
     qr_img = base64.b64encode(buffer.getvalue()).decode()
 
+    # Optimizamos la consulta y preparamos los detalles
+    detalles = movimiento.detalles.select_related('material', 'requerimiento').all()
+
+    # Lógica para columna dinámica:
+    # Mostrar columna si NO hay requerimiento global Y al menos un ítem tiene requerimiento específico
+    mostrar_columna_req = False
+    if not movimiento.requerimiento and any(d.requerimiento for d in detalles):
+        mostrar_columna_req = True
+
     template_path = 'logistica/vale_pdf.html'
     context = {
         'movimiento': movimiento,
-        'detalles': movimiento.detalles.all(),
+        'detalles': detalles,
         'config': config,
         'qr_code': qr_img,
-        'titulo': f"VALE DE {movimiento.get_tipo_display().upper()}"
+        'titulo': f"VALE DE {movimiento.get_tipo_display().upper()}",
+        'mostrar_columna_req': mostrar_columna_req,
     }
 
     response = HttpResponse(content_type='application/pdf')
@@ -233,6 +245,47 @@ def requerimiento_detail(request, req_id):
     }
     return render(request, 'logistica/requerimiento_detail.html', context)
 
+def requerimiento_create(request):
+    """
+    Crea un nuevo Requerimiento (Pedido de Materiales).
+    """
+    if request.method == 'POST':
+        form = RequerimientoForm(request.POST)
+        formset = DetalleRequerimientoFormSet(request.POST)
+        
+        if form.is_valid() and formset.is_valid():
+            try:
+                with transaction.atomic():
+                    req = form.save(commit=False)
+                    req.creado_por = request.user
+                    
+                    # Asignamos el proyecto por defecto (o el del usuario si existiera lógica)
+                    # Aquí asumimos el primer proyecto activo para evitar errores
+                    req.proyecto = Proyecto.objects.first() 
+                    
+                    req.save()
+                    
+                    formset.instance = req
+                    formset.save()
+                    
+                    messages.success(request, f'Requerimiento {req.codigo} creado exitosamente.')
+                    return redirect('requerimiento_list')
+            except Exception as e:
+                messages.error(request, f"Error al guardar: {e}")
+    else:
+        form = RequerimientoForm(initial={'fecha_solicitud': timezone.now().date()})
+        formset = DetalleRequerimientoFormSet()
+
+    context = {
+        'form': form,
+        'formset': formset,
+        'titulo': "Nuevo Requerimiento",
+        'boton_texto': "Crear Pedido",
+        'materiales_disponibles': Material.objects.filter(activo=True).order_by('codigo'),
+        'trabajadores_disponibles': Trabajador.objects.filter(activo=True).order_by('nombres'),
+    }
+    return render(request, 'logistica/requerimiento_form.html', context)
+
 # ==========================================
 # 3. CREACIÓN Y GESTIÓN DE MOVIMIENTOS
 # ==========================================
@@ -338,12 +391,39 @@ def operacion_almacen(request, tipo_accion, almacen_id):
     form.fields['tipo'].choices = choices_filtradas
     # =========================================================================
 
+    # =========================================================================
+    # 🛡️ VALIDACIÓN FRONTEND: MAPA DE MATERIALES POR REQUERIMIENTO
+    # =========================================================================
+    reqs_map = {}
+    mats_reqs_map = {} # Nuevo: Mapa inverso (Material -> Requerimientos)
+    # Obtenemos el queryset que ya filtró el formulario (solo pendientes/parciales)
+    if 'requerimiento' in form.fields:
+        qs_reqs = form.fields['requerimiento'].queryset
+        # Obtenemos los materiales válidos para cada requerimiento en una sola consulta
+        detalles_data = DetalleRequerimiento.objects.filter(
+            requerimiento__in=qs_reqs
+        ).values('requerimiento_id', 'material_id')
+        
+        for item in detalles_data:
+            r_id = str(item['requerimiento_id'])
+            m_id = str(item['material_id'])
+            if r_id not in reqs_map: reqs_map[r_id] = []
+            reqs_map[r_id].append(m_id)
+            
+            # Llenamos el mapa inverso
+            if m_id not in mats_reqs_map: mats_reqs_map[m_id] = []
+            mats_reqs_map[m_id].append(r_id)
+
     context = {
         'form': form,
         'formset': formset,
         'almacen': almacen,
         'titulo': f"{'Salida' if tipo_accion == 'salida' else 'Ingreso'} de Materiales{' - ' + almacen.nombre if almacen else ''}",
-        'boton_texto': f"Confirmar {'Salida' if tipo_accion == 'salida' else 'Ingreso'}"
+        'boton_texto': f"Confirmar {'Salida' if tipo_accion == 'salida' else 'Ingreso'}",
+        'materiales_disponibles': Material.objects.filter(activo=True).order_by('codigo'),
+        'reqs_materiales_json': json.dumps(reqs_map),
+        'mats_reqs_json': json.dumps(mats_reqs_map), # Enviamos el nuevo mapa al template
+        'trabajadores_disponibles': Trabajador.objects.filter(activo=True).order_by('nombres') # Para el autofiltro de solicitante
     }
     return render(request, 'logistica/operacion_form.html', context)
 
@@ -385,7 +465,8 @@ def editar_movimiento(request, movimiento_id):
         'formset': formset,
         'titulo': f"Editar {movimiento.get_tipo_display()}",
         'boton_texto': "Guardar Cambios",
-        'almacen': almacen_contexto
+        'almacen': almacen_contexto,
+        'trabajadores_disponibles': Trabajador.objects.filter(activo=True).order_by('nombres') # Para el autofiltro
     }
     return render(request, 'logistica/operacion_form.html', context)
 
@@ -450,14 +531,26 @@ def anular_movimiento(request, movimiento_id):
 
 def api_consultar_stock(request, almacen_id, material_id):
     """
-    API JSON: Devuelve el stock actual de un material.
+    API JSON: Devuelve el stock actual de un material y su costo promedio.
     """
     try:
+        if str(almacen_id) == '00000000-0000-0000-0000-000000000000':
+            return JsonResponse({'stock': 0, 'precio': 0})
+
         item = Stock.objects.filter(almacen_id=almacen_id, material_id=material_id).first()
         stock_actual = item.cantidad if item else 0
-        return JsonResponse({'stock': stock_actual})
+        
+        # Obtener Costo Promedio (Existencia del Proyecto)
+        precio = 0
+        almacen = item.almacen if item else Almacen.objects.filter(id=almacen_id).first()
+        if almacen and almacen.proyecto:
+            existencia = Existencia.objects.filter(proyecto=almacen.proyecto, material_id=material_id).first()
+            if existencia:
+                precio = existencia.costo_promedio
+
+        return JsonResponse({'stock': stock_actual, 'precio': precio})
     except Exception as e:
-        return JsonResponse({'stock': 0, 'error': str(e)})
+        return JsonResponse({'stock': 0, 'precio': 0, 'error': str(e)})
 
 # ==========================================
 # 6. ZONA DE PELIGRO (ADMINISTRACIÓN)
