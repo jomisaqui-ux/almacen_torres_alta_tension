@@ -8,9 +8,8 @@ from django.utils import timezone
 import qrcode
 from io import BytesIO
 import base64
-from .models import Trabajador
+from .models import Trabajador, EntregaEPP
 from .forms import TrabajadorForm
-from apps.logistica.models import DetalleMovimiento
 from apps.core.models import Configuracion
 
 class TrabajadorListView(ListView):
@@ -52,12 +51,10 @@ class TrabajadorDetailView(DetailView):
     
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        # Historial de EPPs entregados (Confirmados)
-        context['epps'] = DetalleMovimiento.objects.filter(
-            movimiento__trabajador=self.object,
-            movimiento__tipo='SALIDA_EPP',
-            movimiento__estado='CONFIRMADO'
-        ).select_related('movimiento', 'material').order_by('-movimiento__fecha')
+        # Historial de EPPs (Leemos de la tabla consolidada EntregaEPP)
+        context['epps'] = EntregaEPP.objects.filter(
+            trabajador=self.object
+        ).select_related('material', 'movimiento_origen').order_by('-fecha_entrega')
         return context
 
 def generar_constancia_pdf(request, pk):

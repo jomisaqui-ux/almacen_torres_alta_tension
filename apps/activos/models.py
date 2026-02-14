@@ -62,6 +62,23 @@ class Activo(models.Model):
     fecha_compra = models.DateField(null=True, blank=True)
     valor_compra = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     foto = models.ImageField(upload_to='activos/', null=True, blank=True, help_text="Foto referencial del equipo")
+    
+    ingreso_origen = models.ForeignKey(
+        'logistica.Movimiento', 
+        on_delete=models.PROTECT, 
+        null=True, 
+        blank=True, 
+        related_name='activos_generados'
+    )
+    
+    material = models.ForeignKey(
+        'catalogo.Material',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='activos_fijos',
+        help_text="Enlace al catálogo para control de stock"
+    )
 
     def __str__(self):
         return f"{self.codigo} - {self.nombre}"

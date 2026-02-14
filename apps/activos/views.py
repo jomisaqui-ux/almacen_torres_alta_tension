@@ -8,6 +8,8 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from .models import Activo, AsignacionActivo, Kit
 from .forms import ActivoForm, AsignacionForm, DevolucionForm, KitForm, AsignarKitForm
+from apps.logistica.models import Movimiento, DetalleMovimiento, Almacen
+from apps.logistica.services import KardexService
 
 class ActivoListView(ListView):
     model = Activo
@@ -148,8 +150,43 @@ def devolver_activo(request, pk):
                     activo.estado = 'DISPONIBLE'
                     activo.trabajador_asignado = None
                     activo.save()
+                    
+                    # 3. AUTOMATIZACIÓN KARDEX: Generar Reingreso de Stock
+                    # Si el activo está vinculado a un material, devolvemos 1 unidad al almacén.
+                    if activo.material:
+                        # Determinar almacén destino (Idealmente el mismo donde se originó, o el principal)
+                        almacen_destino = None
+                        if activo.ingreso_origen and activo.ingreso_origen.almacen_destino:
+                            almacen_destino = activo.ingreso_origen.almacen_destino
+                        else:
+                            # Fallback: Buscar almacén principal del proyecto
+                            almacen_destino = Almacen.objects.filter(es_principal=True).first()
+                        
+                        if almacen_destino:
+                            # Crear Movimiento de Devolución
+                            mov = Movimiento.objects.create(
+                                proyecto=almacen_destino.proyecto,
+                                tipo='DEVOLUCION_OBRA',
+                                almacen_destino=almacen_destino,
+                                fecha=timezone.now(),
+                                creado_por=request.user,
+                                observacion=f"Reingreso automático por devolución de activo: {activo.codigo}",
+                                nota_ingreso=f"NI-DEV-{activo.codigo[:8]}" # Código temporal o autogenerado
+                            )
+                            
+                            # Crear Detalle
+                            DetalleMovimiento.objects.create(
+                                movimiento=mov,
+                                material=activo.material,
+                                cantidad=1,
+                                costo_unitario=activo.valor_compra,
+                                activo=activo # Vinculamos para trazabilidad
+                            )
+                            
+                            # Confirmar para afectar stock
+                            KardexService.confirmar_movimiento(mov.id)
                 
-                messages.success(request, f'Activo {activo.codigo} devuelto al almacén.')
+                messages.success(request, f'Activo {activo.codigo} devuelto y stock reingresado al almacén.')
                 return redirect('activo_list')
             except Exception as e:
                 messages.error(request, f'Error al devolver: {e}')

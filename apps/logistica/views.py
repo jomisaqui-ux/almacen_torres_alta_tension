@@ -14,12 +14,14 @@ import base64
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
 import json
+from django.urls import reverse
 
 # Importamos modelos y formularios locales
 from .models import Movimiento, DetalleMovimiento, Stock, Almacen, Material, Proyecto, Requerimiento, Existencia, DetalleRequerimiento
 from .forms import MovimientoForm, DetalleMovimientoFormSet, RequerimientoForm, DetalleRequerimientoFormSet
 from .services import KardexService
 from apps.rrhh.models import Trabajador
+from apps.activos.models import Activo, AsignacionActivo
 from apps.core.models import Configuracion
 
 # ==========================================
@@ -112,17 +114,25 @@ def inventario_list(request):
 def movimiento_list(request):
     """
     Pantalla Principal de Movimientos.
+    Permite filtrar por estado (ej: ?estado=BORRADOR)
     """
-    # Filtramos los últimos 50 para no saturar
-    movimientos = Movimiento.objects.select_related(
+    estado = request.GET.get('estado')
+    
+    qs = Movimiento.objects.select_related(
         'almacen_origen', 
         'almacen_destino', 
         'torre_destino',
         'proyecto'
-    ).order_by('-fecha')[:50]
+    ).order_by('-fecha')
+
+    if estado:
+        qs = qs.filter(estado=estado)
+    else:
+        qs = qs[:50] # Filtramos los últimos 50 para no saturar si no hay filtro
     
     context = {
-        'movimientos': movimientos
+        'movimientos': qs,
+        'estado_filtro': estado
     }
     return render(request, 'logistica/movimiento_list.html', context)
 
@@ -361,10 +371,21 @@ def operacion_almacen(request, tipo_accion, almacen_id):
             formset = DetalleMovimientoFormSet(request.POST, instance=nuevo_mov, form_kwargs={'tipo_accion': tipo_accion})
             if formset.is_valid():
                 formset.save()
+                
+                # RESPUESTA AJAX (JSON) PARA TOAST
+                if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'success': True,
+                        'message': f'Operación {nuevo_mov.nota_ingreso} registrada exitosamente.',
+                        'redirect_url': reverse('movimiento_list')
+                    })
+
                 messages.success(request, f'Operación {nuevo_mov.nota_ingreso} registrada exitosamente.')
                 return redirect('movimiento_list')
             else:
                 nuevo_mov.delete()
+                if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                    return JsonResponse({'success': False, 'error': 'Error en los detalles de los materiales.'})
                 messages.error(request, 'Error en los detalles de los materiales.')
     else:
         form = MovimientoForm(initial=initial_data, tipo_accion=tipo_accion)
@@ -423,8 +444,7 @@ def operacion_almacen(request, tipo_accion, almacen_id):
         'materiales_disponibles': Material.objects.filter(activo=True).order_by('codigo'),
         'reqs_materiales_json': json.dumps(reqs_map),
         'mats_reqs_json': json.dumps(mats_reqs_map), # Enviamos el nuevo mapa al template
-        'trabajadores_disponibles': Trabajador.objects.filter(activo=True).order_by('nombres'), # Para el autofiltro de solicitante
-        'materiales_tipos_json': json.dumps({str(id): tipo for id, tipo in Material.objects.values_list('id', 'tipo')}) # Mapa de tipos para JS
+        'materiales_tipos_json': json.dumps({str(id): tipo for id, tipo in Material.objects.values_list('id', 'tipo')}), # Mapa de tipos para JS
     }
     return render(request, 'logistica/operacion_form.html', context)
 
@@ -467,7 +487,6 @@ def editar_movimiento(request, movimiento_id):
         'titulo': f"Editar {movimiento.get_tipo_display()}",
         'boton_texto': "Guardar Cambios",
         'almacen': almacen_contexto,
-        'trabajadores_disponibles': Trabajador.objects.filter(activo=True).order_by('nombres') # Para el autofiltro
     }
     return render(request, 'logistica/operacion_form.html', context)
 
@@ -553,6 +572,51 @@ def api_consultar_stock(request, almacen_id, material_id):
     except Exception as e:
         return JsonResponse({'stock': 0, 'precio': 0, 'error': str(e)})
 
+def api_crear_trabajador(request):
+    """
+    API para creación rápida de trabajadores desde el formulario de salida.
+    """
+    if request.method == 'POST':
+        nombres = request.POST.get('nombres')
+        apellidos = request.POST.get('apellidos')
+        dni = request.POST.get('dni')
+        
+        if not all([nombres, apellidos, dni]):
+            return JsonResponse({'success': False, 'error': 'Faltan datos obligatorios (Nombre, Apellido, DNI).'})
+        
+        if not dni.isdigit() or len(dni) != 8:
+            return JsonResponse({'success': False, 'error': 'El DNI debe tener exactamente 8 dígitos numéricos.'})
+
+        if Trabajador.objects.filter(dni=dni).exists():
+            return JsonResponse({'success': False, 'error': f'Ya existe un trabajador con DNI {dni}.'})
+        
+        try:
+            t = Trabajador.objects.create(
+                nombres=nombres.upper(),
+                apellidos=apellidos.upper(),
+                dni=dni,
+                activo=True
+            )
+            return JsonResponse({'success': True, 'id': t.id, 'text': str(t)})
+        except Exception as e:
+            return JsonResponse({'success': False, 'error': str(e)})
+    
+    return JsonResponse({'success': False, 'error': 'Método no permitido'})
+
+def api_buscar_trabajador(request):
+    """
+    Buscador optimizado para miles de registros.
+    """
+    q = request.GET.get('q', '').strip()
+    if len(q) < 2:
+        return JsonResponse({'results': []})
+    
+    qs = Trabajador.objects.filter(activo=True).filter(
+        Q(nombres__icontains=q) | Q(apellidos__icontains=q) | Q(dni__icontains=q)
+    ).values('id', 'nombres', 'apellidos', 'dni')[:20] # Limitamos a 20 resultados
+    
+    return JsonResponse({'results': list(qs)})
+
 # ==========================================
 # 6. ZONA DE PELIGRO (ADMINISTRACIÓN)
 # ==========================================
@@ -574,13 +638,21 @@ def reset_database(request):
         else:
             try:
                 with transaction.atomic():
-                    # 1. Eliminar detalles y movimientos
+                    # 1. Eliminar detalles (Rompe dependencia con Activos)
                     DetalleMovimiento.objects.all().delete()
+                    
+                    # 2. Eliminar Activos Fijos y Asignaciones (Rompe dependencia con Movimientos)
+                    AsignacionActivo.objects.all().delete()
+                    Activo.objects.all().delete()
+
+                    # 3. Eliminar Movimientos (Ahora sí se puede)
                     Movimiento.objects.all().delete()
-                    # 2. Eliminar Stock y Costos
+                    
+                    # 4. Eliminar Stock y Costos
                     Stock.objects.all().delete()
                     Existencia.objects.all().delete()
-                    # 3. Eliminar Requerimientos
+                    
+                    # 5. Eliminar Requerimientos
                     DetalleRequerimiento.objects.all().delete()
                     Requerimiento.objects.all().delete()
                 

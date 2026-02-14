@@ -15,7 +15,9 @@ from .views import(
     reset_database,
     cerrar_requerimiento,
     exportar_inventario_excel,
-    exportar_kardex_excel
+    exportar_kardex_excel,
+    api_crear_trabajador,
+    api_buscar_trabajador
 )
 
 urlpatterns = [
@@ -34,5 +36,7 @@ urlpatterns = [
     path('inventario/exportar/', exportar_inventario_excel, name='exportar_inventario_excel'),
     path('kardex/exportar/<uuid:almacen_id>/<uuid:material_id>/', exportar_kardex_excel, name='exportar_kardex_excel'),
     path('api/stock/<uuid:almacen_id>/<uuid:material_id>/', api_consultar_stock, name='api_consultar_stock'),
+    path('api/trabajador/nuevo/', api_crear_trabajador, name='api_crear_trabajador'),
+    path('api/trabajador/buscar/', api_buscar_trabajador, name='api_buscar_trabajador'),
     path('config/reset-db/', reset_database, name='reset_database'),
 ]

@@ -3,7 +3,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum, F
 from decimal import Decimal
 from .models import Movimiento, Stock, Existencia, DetalleRequerimiento
-from apps.activos.models import Activo
+from apps.activos.models import Activo, AsignacionActivo
+from apps.rrhh.models import EntregaEPP
 
 class KardexService:
     @staticmethod
@@ -121,6 +122,15 @@ class KardexService:
             if len(lista_series) != cantidad_entera:
                 raise ValidationError(f"Error en {detalle.material}: Ingresaste {len(lista_series)} series ({raw_series}) pero la cantidad es {cantidad_entera}. Deben coincidir.")
 
+            # Procesar Marca / Modelo (Ej: "Stanley / D8BD")
+            raw_marca = detalle.marca or ""
+            marca_real = raw_marca
+            modelo_real = ""
+            if "/" in raw_marca:
+                partes = raw_marca.split("/", 1)
+                marca_real = partes[0].strip()
+                modelo_real = partes[1].strip()
+
             # 3. Creación de Activos
             for i, serie in enumerate(lista_series):
                 # Verificar unicidad de serie
@@ -136,11 +146,13 @@ class KardexService:
                     codigo=codigo_interno[:50], # Truncar por seguridad
                     serie=serie,
                     nombre=detalle.material.descripcion,
-                    marca=detalle.marca, # Usamos la marca ingresada en la línea
-                    modelo="", # Opcional, podría venir en el mismo campo marca
+                    marca=marca_real,
+                    modelo=modelo_real,
                     estado='DISPONIBLE',
                     fecha_compra=movimiento.fecha.date(),
                     valor_compra=detalle.costo_unitario,
+                    ingreso_origen=movimiento, # Vinculamos al movimiento origen
+                    material=detalle.material, # Vinculamos al catálogo para stock
                     # No asignamos kit ni trabajador todavía
                 )
 
@@ -241,6 +253,35 @@ class KardexService:
         # D. GRABAR EL COSTO DE SALIDA (Snapshot)
         # Es vital guardar a qué costo salió esto para reportes históricos.
         detalle.costo_unitario = existencia.costo_promedio
+        
+        # E. GESTIÓN DE ACTIVOS FIJOS (Asignación Automática)
+        if detalle.activo:
+            # Validar disponibilidad (Doble check por concurrencia)
+            if detalle.activo.estado != 'DISPONIBLE':
+                raise ValidationError(f"El activo {detalle.activo.codigo} ya no está disponible (Estado: {detalle.activo.estado}).")
+            
+            detalle.activo.estado = 'ASIGNADO'
+            detalle.activo.trabajador_asignado = movimiento.trabajador
+            detalle.activo.save()
+            
+            # Crear historial de asignación
+            AsignacionActivo.objects.create(
+                activo=detalle.activo,
+                trabajador=movimiento.trabajador,
+                observacion_entrega=f"Salida por Vale {movimiento.nota_ingreso} (Ref: {movimiento.documento_referencia})"
+            )
+
+        # F. GESTIÓN DE EPP (Registro Automático en Historial RRHH)
+        # Si el material es tipo EPP y hay un trabajador responsable, lo registramos en su historial.
+        if detalle.material.tipo == 'EPP' and movimiento.trabajador:
+            EntregaEPP.objects.create(
+                trabajador=movimiento.trabajador,
+                material=detalle.material,
+                cantidad=detalle.cantidad,
+                fecha_entrega=movimiento.fecha,
+                movimiento_origen=movimiento
+            )
+
         detalle.save()
 
     @staticmethod
@@ -298,6 +339,11 @@ class KardexService:
         # Si es CONFIRMADO, revertimos efectos
         detalles = movimiento.detalles.all()
         
+        # 0. Limpieza de Activos Fijos (Si fue un ingreso que generó equipos)
+        if movimiento.tipo == 'INGRESO_COMPRA':
+            # Eliminamos los activos que se crearon con este ingreso para no dejar "fantasmas"
+            Activo.objects.filter(ingreso_origen=movimiento).delete()
+
         # 1. Revertir Stock, Existencia y Requerimientos (Línea por línea)
         for detalle in detalles:
             # Revertir Ingreso de Requerimiento (Lógica inversa de conciliación)
@@ -311,6 +357,26 @@ class KardexService:
                  if req_asociado:
                      KardexService._revertir_atencion_detalle_requerimiento(detalle, req_asociado)
                  
+                 # Revertir Estado de Activo Fijo (Si hubo asignación)
+                 if detalle.activo:
+                     detalle.activo.estado = 'DISPONIBLE'
+                     detalle.activo.trabajador_asignado = None
+                     detalle.activo.save()
+                     # Eliminamos la asignación generada para limpiar el historial
+                     AsignacionActivo.objects.filter(
+                         activo=detalle.activo,
+                         trabajador=movimiento.trabajador,
+                         fecha_devolucion__isnull=True
+                     ).delete()
+
+                 # Revertir Historial EPP (Si se generó registro automático)
+                 if detalle.material.tipo == 'EPP' and movimiento.trabajador:
+                     EntregaEPP.objects.filter(
+                         movimiento_origen=movimiento,
+                         material=detalle.material,
+                         trabajador=movimiento.trabajador
+                     ).delete()
+
                  KardexService._revertir_salida(movimiento, detalle, existencia)
 
             # Obtener existencia para ajustes

@@ -2,6 +2,8 @@ from django import forms
 from django.forms import inlineformset_factory
 from django.db.models import F
 from .models import Movimiento, DetalleMovimiento, Requerimiento, DetalleRequerimiento
+from apps.activos.models import Activo
+from apps.rrhh.models import Trabajador
 
 # ==========================================
 # 1. FORMULARIO DE LA CABECERA (Movimiento)
@@ -19,7 +21,6 @@ class MovimientoForm(forms.ModelForm):
             'trabajador',
             'nota_ingreso',         # <--- Campo Nuevo
             'documento_referencia', # <--- Campo Nuevo
-            'solicitante', 
             'observacion'
         ]
         
@@ -60,6 +61,19 @@ class MovimientoForm(forms.ModelForm):
                 field.widget.attrs.update({'class': 'form-check-input'})
             else:
                 field.widget.attrs.update({'class': 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'})
+        
+        # OPTIMIZACIÓN: No cargar todos los trabajadores en el select inicial
+        # Si hay datos POST (validación), permitimos el ID enviado.
+        # Si es edición (instance), permitimos el ID actual.
+        # Si es nuevo, queryset vacío.
+        if self.data and 'trabajador' in self.data:
+            trabajador_id = self.data.get('trabajador')
+            if trabajador_id:
+                self.fields['trabajador'].queryset = Trabajador.objects.filter(id=trabajador_id)
+        elif self.instance.pk and self.instance.trabajador:
+            self.fields['trabajador'].queryset = Trabajador.objects.filter(id=self.instance.trabajador.id)
+        else:
+            self.fields['trabajador'].queryset = Trabajador.objects.none()
 
     def clean(self):
         """Validación cruzada para asegurar que existan los almacenes correctos según el tipo."""
@@ -79,10 +93,10 @@ class MovimientoForm(forms.ModelForm):
         if (tipo in tipos_salida or tipo == 'SALIDA_EPP') and not origen:
             self.add_error('almacen_origen', 'Para registrar esta Salida, es OBLIGATORIO seleccionar el Almacén Origen.')
             
-        if tipo == 'SALIDA_EPP':
+        if tipo in ['SALIDA_EPP', 'SALIDA_OBRA', 'SALIDA_OFICINA']:
             trabajador = cleaned_data.get('trabajador')
             if not trabajador:
-                self.add_error('trabajador', 'Para entrega de EPP, es OBLIGATORIO seleccionar al Trabajador.')
+                self.add_error('trabajador', 'Es OBLIGATORIO seleccionar al Trabajador (Solicitante/Beneficiario).')
             elif not trabajador.activo:
                 self.add_error('trabajador', f'El trabajador {trabajador} figura como INACTIVO (Cesado). No se le puede entregar materiales.')
 
@@ -99,7 +113,7 @@ class DetalleMovimientoForm(forms.ModelForm):
 
     class Meta:
         model = DetalleMovimiento
-        fields = ['material', 'cantidad', 'costo_unitario', 'marca', 'series_temporales'] 
+        fields = ['material', 'cantidad', 'costo_unitario', 'marca', 'series_temporales', 'activo'] 
         widgets = {
             # Usamos HiddenInput para evitar renderizar el select pesado en cada fila
             'material': forms.HiddenInput(),
@@ -108,6 +122,7 @@ class DetalleMovimientoForm(forms.ModelForm):
             'costo_unitario': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Precio S/.'}),
             'marca': forms.TextInput(attrs={'placeholder': 'Marca / Modelo', 'class': 'form-control-sm campo-activo-fijo'}),
             'series_temporales': forms.TextInput(attrs={'placeholder': 'Series (sep. por comas)', 'class': 'form-control-sm campo-activo-fijo'}),
+            'activo': forms.Select(attrs={'class': 'form-select form-select-sm campo-activo-salida'}),
         }
     
     def __init__(self, *args, tipo_accion=None, **kwargs):
@@ -116,6 +131,14 @@ class DetalleMovimientoForm(forms.ModelForm):
         # Hacemos que el costo sea opcional (para Salidas o cuando no se tiene el dato)
         self.fields['costo_unitario'].required = False
         
+        # Filtramos los activos disponibles para el selector
+        # Solo mostramos activos DISPONIBLES y que NO pertenezcan a un Kit (los kits se asignan en bloque)
+        qs_activos = Activo.objects.filter(estado='DISPONIBLE', kit__isnull=True)
+        if self.instance.pk and self.instance.activo:
+            # Si estamos editando, incluimos el activo actual aunque ya no esté disponible (porque lo tiene esta línea)
+            qs_activos = qs_activos | Activo.objects.filter(id=self.instance.activo.id)
+        self.fields['activo'].queryset = qs_activos
+
         # Filtramos para que no salgan requerimientos viejos/cerrados en el desplegable de la fila
         qs = Requerimiento.objects.exclude(estado__in=['TOTAL', 'CANCELADO'])
         
@@ -172,6 +195,13 @@ class DetalleMovimientoForm(forms.ModelForm):
                 
                 if len(lista_series) != cantidad_entera:
                     self.add_error('series_temporales', f"Debes ingresar {cantidad_entera} series separadas por comas. (Ingresaste {len(lista_series)})")
+        
+        # Validar solo en Salidas y si es Activo Fijo
+        if self.tipo_accion == 'salida' and material and material.tipo == 'ACTIVO_FIJO':
+            activo = cleaned_data.get('activo')
+            if not activo:
+                self.add_error('activo', "Para la salida de un Activo Fijo, debes seleccionar el equipo específico (Serie/Código).")
+            # Nota: La cantidad se valida en el frontend para que sea 1
         
         return cleaned_data
 

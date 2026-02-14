@@ -11,17 +11,17 @@
         z-index: 1050; /* Por encima de todo */
         display: none; /* Oculto por defecto */
     }
-    .item-resultado {
+    .item-resultado, .item-trabajador {
         cursor: pointer;
     }
-    .item-resultado:hover {
+    .item-resultado:hover, .item-trabajador:hover {
         background-color: #f8f9fa;
         color: #0d6efd;
     }
     .text-codigo { color: #0d6efd; } /* Azul estándar para el código */
-    .item-resultado.active { background-color: #198754 !important; color: white !important; } /* Verde forzado */
-    .item-resultado.active .text-codigo { color: white !important; } /* Forzar texto blanco al seleccionar */
-    .item-resultado.active small { color: #e0e0e0 !important; }
+    .item-resultado.active, .item-trabajador.active { background-color: #198754 !important; color: white !important; } /* Verde forzado */
+    .item-resultado.active .text-codigo, .item-trabajador.active .text-codigo { color: white !important; } /* Forzar texto blanco al seleccionar */
+    .item-resultado.active small, .item-trabajador.active small { color: #e0e0e0 !important; }
 </style>
 {% endblock %}
 
@@ -48,14 +48,6 @@
                     <div class="form-text small text-muted">Opcional para Ingresos, Obligatorio para Salidas.</div>
                 </div>
 
-                <div class="col-md-4">
-                    <label class="form-label fw-bold small text-uppercase text-muted">Solicitante</label>
-                    <div class="input-group">
-                        <span class="input-group-text bg-white"><i class="fas fa-user"></i></span>
-                        {{ form.solicitante }}
-                    </div>
-                </div>
-
                 {% if form.almacen_origen.is_hidden == False %}
                 <div class="col-md-4">
                     <label class="form-label fw-bold small text-uppercase text-muted">Almacén Origen</label>
@@ -72,10 +64,21 @@
 
                 {% if form.trabajador.is_hidden == False %}
                 <div class="col-md-4">
-                    <label class="form-label fw-bold small text-uppercase text-info">Trabajador (Beneficiario)</label>
-                    <div class="input-group">
+                    <label class="form-label fw-bold small text-uppercase text-info">Trabajador (Solicitante)</label>
+                    <div class="input-group position-relative">
                         <span class="input-group-text bg-info text-white"><i class="fas fa-hard-hat"></i></span>
-                        {{ form.trabajador }}
+                        
+                        <!-- Input Visual de Búsqueda -->
+                        <input type="text" id="input_buscar_trabajador" class="form-control" placeholder="Buscar por DNI, Nombre..." autocomplete="off">
+                        
+                        <!-- Select Original Oculto (Mantiene la lógica de Django) -->
+                        <div class="d-none">{{ form.trabajador }}</div>
+
+                        <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#modalNuevoTrabajador" title="Registrar Nuevo Trabajador">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                        <!-- Lista de Resultados Flotante -->
+                        <div id="resultados_trabajador" class="list-group position-absolute w-100 shadow start-0" style="top: 100%; z-index: 1050; display: none; max-height: 250px; overflow-y: auto;"></div>
                     </div>
                 </div>
                 {% endif %}
@@ -134,14 +137,6 @@
             {% for field in form %}
                 {% if field.is_hidden %}{{ field }}{% endif %}
             {% endfor %}
-
-            <!-- DATALIST PARA AUTOCOMPLETADO DE SOLICITANTE -->
-            <datalist id="list-trabajadores">
-                {% for t in trabajadores_disponibles %}
-                    <!-- Concatenamos Nombre y DNI en el value para permitir búsqueda por ambos campos -->
-                    <option value="{{ t.nombres }} {{ t.apellidos }} ({{ t.dni }})"></option>
-                {% endfor %}
-            </datalist>
         </div>
     </div>
 
@@ -172,8 +167,9 @@
                         <th width="25%">Material</th>
                         <th width="8%">Cant.</th>
                         <th width="10%">Costo (S/.)</th>
-                        <th width="12%">Marca</th>
-                        <th width="15%">Series</th>
+                        <th width="12%" class="col-ingreso">Marca</th>
+                        <th width="15%" class="col-ingreso">Series</th>
+                        <th width="27%" class="col-salida" style="display:none;">Activo (Serie)</th>
                         <th width="20%">Asignar a Req. / Stock Libre</th>
                         <th width="10%"></th>
                     </tr>
@@ -198,8 +194,9 @@
                         </td>
                         <td>{{ form.cantidad }}</td>
                         <td>{{ form.costo_unitario }}</td>
-                        <td>{{ form.marca }}</td>
-                        <td>{{ form.series_temporales }}</td>
+                        <td class="col-ingreso">{{ form.marca }}</td>
+                        <td class="col-ingreso">{{ form.series_temporales }}</td>
+                        <td class="col-salida" style="display:none;">{{ form.activo }}</td>
                         <td>{{ form.seleccion_requerimiento }}</td>
                         <td class="text-center align-middle">
                             <div class="d-none">{{ form.DELETE }}</div> <!-- Checkbox oculto de Django -->
@@ -228,6 +225,53 @@
     </div>
 </form>
 
+<!-- MODAL NUEVO TRABAJADOR (ALTA RÁPIDA) -->
+<div class="modal fade" id="modalNuevoTrabajador" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i>Nuevo Trabajador</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="form-quick-trabajador">
+                    <div class="mb-3">
+                        <label class="form-label">DNI *</label>
+                        <input type="text" class="form-control" name="dni" required pattern="\d{8}" maxlength="8" minlength="8" title="Debe contener exactamente 8 dígitos numéricos" oninput="this.value = this.value.replace(/[^0-9]/g, '')" placeholder="Ej: 12345678">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nombres *</label>
+                            <input type="text" class="form-control" name="nombres" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Apellidos *</label>
+                            <input type="text" class="form-control" name="apellidos" required>
+                        </div>
+                    </div>
+                    <div id="msg-error-trabajador" class="alert alert-danger d-none small"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-info text-white" id="btn-save-trabajador">Guardar y Seleccionar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TOAST DE NOTIFICACIÓN -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100">
+    <div id="liveToast" class="toast align-items-center text-white bg-success border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="d-flex">
+            <div class="toast-body fw-bold" id="toast-message">
+                <!-- Mensaje dinámico -->
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    </div>
+</div>
+
 <div id="empty-form" style="display:none;">
     <table>
         <tr class="item-row">
@@ -240,8 +284,9 @@
             </td>
             <td>{{ formset.empty_form.cantidad }}</td>
             <td>{{ formset.empty_form.costo_unitario }}</td>
-            <td>{{ formset.empty_form.marca }}</td>
-            <td>{{ formset.empty_form.series_temporales }}</td>
+            <td class="col-ingreso">{{ formset.empty_form.marca }}</td>
+            <td class="col-ingreso">{{ formset.empty_form.series_temporales }}</td>
+            <td class="col-salida" style="display:none;">{{ formset.empty_form.activo }}</td>
             <td>{{ formset.empty_form.seleccion_requerimiento }}</td>
             <td class="text-center align-middle">
                 <div class="d-none">{{ formset.empty_form.DELETE }}</div>
@@ -291,6 +336,7 @@
         let divDestino = $('#id_almacen_destino').closest('.col-md-4');
         let divTorre = $('#id_torre_destino').closest('.col-md-4');
         let divTrabajador = $('#id_trabajador').closest('.col-md-4');
+        let labelTrabajador = divTrabajador.find('label');
 
         // LÓGICA DE VISIBILIDAD
         if (tipoTexto.includes('INGRESO') || tipoTexto.includes('DEVOLUCION') || tipoTexto.includes('ENTRADA')) {
@@ -309,7 +355,21 @@
             divTorre.hide();
             $('#id_torre_destino').val(null).trigger('change');
             
-            divTrabajador.hide();
+            // Mostrar trabajador también en ingresos (para Devoluciones o Responsable de Recepción)
+            divTrabajador.show();
+            if (tipoTexto.includes('DEVOLUCION')) {
+                labelTrabajador.text('Trabajador (Devuelve)');
+            } else {
+                labelTrabajador.text('Trabajador (Recepciona/Solicita)');
+            }
+            
+            // Ajuste de columnas de tabla
+            $('.col-ingreso').show();
+            $('.col-salida').hide();
+            // Ajustar anchos si es necesario
+            $('th.col-ingreso').first().attr('width', '12%');
+            $('th.col-ingreso').last().attr('width', '15%');
+            $('th.col-salida').attr('width', '0%');
 
         } else if (tipoTexto.includes('SALIDA') || tipoTexto.includes('CONSUMO')) {
             // === ES UNA SALIDA ===
@@ -323,16 +383,27 @@
             divDestino.hide();
             $('#id_almacen_destino').val(null).trigger('change');
 
-            // 3. Torre vs Trabajador
+            // 3. Torre vs Trabajador (Siempre mostramos Trabajador en salidas)
+            divTrabajador.show();
+            labelTrabajador.text('Trabajador (Solicitante)');
+
             if (tipoTexto.includes('EPP')) {
                 divTorre.hide();
                 $('#id_torre_destino').val(null).trigger('change');
-                divTrabajador.show();
+            } else if (tipoTexto.includes('OFICINA')) {
+                divTorre.hide();
+                $('#id_torre_destino').val(null).trigger('change');
             } else {
+                // SALIDA OBRA
                 divTorre.show();
-                divTrabajador.hide();
-                $('#id_trabajador').val(null).trigger('change');
             }
+            
+            // Ajuste de columnas de tabla
+            $('.col-ingreso').hide();
+            $('.col-salida').show();
+            $('th.col-ingreso').attr('width', '0%');
+            $('th.col-salida').attr('width', '27%');
+
 
         } else if (tipoTexto.includes('TRANSFERENCIA')) {
             // === ES TRANSFERENCIA ===
@@ -410,14 +481,26 @@
     // --- NUEVO: VISIBILIDAD DE CAMPOS ACTIVO FIJO ---
     function actualizarVisibilidadActivos(row) {
         let materialId = row.find('input[name$="-material"]').val();
-        let inputsActivo = row.find('.campo-activo-fijo'); // Clase definida en forms.py
+        let inputsIngreso = row.find('.campo-activo-fijo'); // Marca y Series
+        let inputSalida = row.find('.campo-activo-salida'); // Select de Activo
+        let esActivoFijo = (materialId && TIPOS_MATERIALES[materialId] === 'ACTIVO_FIJO');
         
-        if (materialId && TIPOS_MATERIALES[materialId] === 'ACTIVO_FIJO') {
-            inputsActivo.show();
-            inputsActivo.attr('placeholder', inputsActivo.attr('placeholder') + ' (Req)');
+        if (esActivoFijo) {
+            if (TIPO_ACCION.includes('INGRESO')) {
+                inputsIngreso.show();
+                inputSalida.hide();
+            } else {
+                // ES SALIDA
+                inputsIngreso.hide();
+                inputSalida.show();
+                // Forzar cantidad a 1 si es salida de activo fijo
+                let cantInput = row.find('input[name$="-cantidad"]');
+                if (cantInput.val() == '' || cantInput.val() > 1) cantInput.val(1);
+            }
         } else {
-            inputsActivo.hide();
-            inputsActivo.val(''); // Limpiar si cambia de material
+            inputsIngreso.hide();
+            inputSalida.hide();
+            inputSalida.val(''); // Limpiar selección
         }
     }
 
@@ -455,9 +538,24 @@
         toggleCampos();
         $('#id_tipo').change(function() { toggleCampos(); });
 
-        // 1.1 Vincular Solicitante con Datalist de Trabajadores
-        $('#id_solicitante').attr('list', 'list-trabajadores');
-        $('#id_solicitante').attr('placeholder', 'Buscar por DNI o Nombre...');
+        // Foco inicial en Tipo de Operación al cargar
+        $('#id_tipo').focus();
+
+        // Navegación: Enter en Documento Referencia -> Buscador Materiales
+        $('#id_documento_referencia').on('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                $('#input_buscar_material').focus();
+            }
+        });
+
+        // Navegación: Enter en Torre Destino -> Documento Referencia
+        $('#id_torre_destino').on('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                $('#id_documento_referencia').focus();
+            }
+        });
 
         // 2. LÓGICA DEL BUSCADOR MANUAL (Sin librerías externas)
         const $inputBusqueda = $('#input_buscar_material');
@@ -704,6 +802,8 @@
 
         // 7. VALIDACIÓN Y LIMPIEZA AL GUARDAR (CRÍTICO PARA EVITAR ERRORES DE FILAS VACÍAS)
         $('form').on('submit', function(e) {
+            e.preventDefault(); // Prevenir envío tradicional para usar AJAX
+
             // A. Limpieza de filas vacías (sin material)
             $('#form-list tr.item-row').each(function() {
                 let row = $(this);
@@ -766,7 +866,6 @@
                 }
             });
             if (errorSeries) {
-                e.preventDefault();
                 return false;
             }
 
@@ -780,10 +879,51 @@
             });
 
             if (filasValidas === 0) {
-                e.preventDefault();
                 alert('⚠️ Error: Debe agregar al menos un material a la lista antes de guardar.');
                 return false;
             }
+
+            // --- ENVÍO AJAX CON TOAST ---
+            let $btn = $(this).find('button[type="submit"]');
+            let originalText = $btn.html();
+            $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i> Procesando...');
+
+            let formData = new FormData(this);
+
+            $.ajax({
+                url: window.location.href,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+                success: function(response) {
+                    if (response.success) {
+                        // Mostrar Toast de Éxito
+                        $('#toast-message').html('<i class="fas fa-check-circle me-2"></i>' + response.message);
+                        let toastEl = document.getElementById('liveToast');
+                        toastEl.classList.remove('bg-danger');
+                        toastEl.classList.add('bg-success');
+                        let toast = new bootstrap.Toast(toastEl);
+                        toast.show();
+
+                        // Redirigir después de 1.5 segundos
+                        setTimeout(function() {
+                            window.location.href = response.redirect_url;
+                        }, 1500);
+                    } else {
+                        // Error controlado por el servidor
+                        alert('Error: ' + (response.error || 'Ocurrió un error desconocido.'));
+                        $btn.prop('disabled', false).html(originalText);
+                    }
+                },
+                error: function(xhr) {
+                    // Error de red o validación HTML fallida
+                    console.error(xhr.responseText);
+                    alert('Error de conexión o validación. Revise los campos.');
+                    $btn.prop('disabled', false).html(originalText);
+                }
+            });
         });
 
         // 8. NAVEGACIÓN DE FOCO (CANTIDAD -> COSTO -> SELECT -> SIGUIENTE FILA -> BUSCADOR)
@@ -804,22 +944,46 @@
                 
                 // B. Si estamos en COSTO
                 else if (name && name.includes('-costo_unitario')) {
+                    e.preventDefault();
+                    // Verificar si es Activo Fijo (Ingreso) -> Ir a MARCA si está visible
+                    let inputMarca = $row.find('input[name$="-marca"]');
+                    if (inputMarca.is(':visible')) {
+                        inputMarca.focus();
+                    } else {
+                        // Flujo normal (Material Consumible)
+                        if (reqGlobal) {
+                            if ($nextRow.length > 0) {
+                                $nextRow.find('input[name$="-cantidad"]').focus().select();
+                            } else {
+                                $('#input_buscar_material').focus();
+                            }
+                        } else {
+                            $row.find('select[name$="-seleccion_requerimiento"]').focus();
+                        }
+                    }
+                }
+
+                // C. Si estamos en MARCA -> Ir a SERIES
+                else if (name && name.includes('-marca')) {
+                    e.preventDefault();
+                    $row.find('input[name$="-series_temporales"]').focus();
+                }
+
+                // D. Si estamos en SERIES -> Ir a SELECT (o Siguiente)
+                else if (name && name.includes('-series_temporales')) {
+                    e.preventDefault();
                     if (reqGlobal) {
-                        // Si hay Req Global, el select está deshabilitado -> Ir a Siguiente Fila o Buscador
-                        e.preventDefault();
                         if ($nextRow.length > 0) {
                             $nextRow.find('input[name$="-cantidad"]').focus().select();
                         } else {
                             $('#input_buscar_material').focus();
                         }
                     } else {
-                        // Si es Stock Libre -> Ir al SELECT
-                        e.preventDefault();
                         $row.find('select[name$="-seleccion_requerimiento"]').focus();
                     }
                 }
 
-                // C. Si estamos en SELECT -> Ir a Siguiente Fila o Buscador
+                // E. Si estamos en SELECT -> Ir a Siguiente Fila o Buscador
                 else if (name && name.includes('-seleccion_requerimiento')) {
                     e.preventDefault();
                     if ($nextRow.length > 0) {
@@ -845,6 +1009,168 @@
         // Inicializar visibilidad de activos fijos para filas existentes (Edición)
         $('#form-list tr.item-row').each(function() {
             actualizarVisibilidadActivos($(this));
+        });
+
+        // --- LÓGICA BUSCADOR TRABAJADORES (AUTOFILTRO) ---
+        const $inputTrabajador = $('#input_buscar_trabajador');
+        const $resTrabajador = $('#resultados_trabajador');
+        const $selectTrabajador = $('#id_trabajador');
+        let selectedIndexTrabajador = -1;
+
+        // 1. Inicializar valor si estamos editando (Leemos el texto del select renderizado por Django)
+        let $opcionInicial = $selectTrabajador.find('option:selected');
+        if ($opcionInicial.val()) {
+            $inputTrabajador.val($opcionInicial.text());
+        }
+
+        // 2. Evento de Búsqueda con Debounce (Retardo)
+        let timeoutBusqueda = null;
+
+        $inputTrabajador.on('input focus', function() {
+            let q = $(this).val().toUpperCase();
+            $resTrabajador.empty().hide();
+            selectedIndexTrabajador = -1;
+            
+            if (q.length < 1) return; // Buscar desde 1 letra
+
+            clearTimeout(timeoutBusqueda);
+            
+            timeoutBusqueda = setTimeout(() => {
+                $.get("{% url 'api_buscar_trabajador' %}", { q: q }, function(data) {
+                    $resTrabajador.empty();
+                    
+                    if (data.results && data.results.length > 0) {
+                        data.results.forEach(t => {
+                            let nombreCompleto = `${t.nombres} ${t.apellidos}`;
+                            let item = `<a href="#" class="list-group-item list-group-item-action item-trabajador" data-id="${t.id}" data-texto="${nombreCompleto} (${t.dni})">
+                                <div class="fw-bold text-dark">${nombreCompleto}</div>
+                                <small class="text-muted"><i class="fas fa-id-card me-1"></i>${t.dni}</small>
+                            </a>`;
+                            $resTrabajador.append(item);
+                        });
+                        $resTrabajador.show();
+                    } else {
+                        $resTrabajador.append('<div class="list-group-item text-muted small">No encontrado. Use el botón (+) para crear.</div>').show();
+                    }
+                });
+            }, 300); // Esperar 300ms después de dejar de escribir
+        });
+
+        // Navegación con Teclado para Trabajadores
+        $inputTrabajador.on('keydown', function(e) {
+            let items = $resTrabajador.find('.item-trabajador');
+            if (items.length === 0) {
+                if (e.key === 'Enter') e.preventDefault(); 
+                return;
+            }
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndexTrabajador++;
+                if (selectedIndexTrabajador >= items.length) selectedIndexTrabajador = 0;
+                updateSelectionTrabajador(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndexTrabajador--;
+                if (selectedIndexTrabajador < 0) selectedIndexTrabajador = items.length - 1;
+                updateSelectionTrabajador(items);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedIndexTrabajador > -1) items.eq(selectedIndexTrabajador).click();
+            } else if (e.key === 'Tab') {
+                if (selectedIndexTrabajador > -1) {
+                    e.preventDefault();
+                    items.eq(selectedIndexTrabajador).click();
+                }
+            } else if (e.key === 'Escape') {
+                $inputTrabajador.val('');
+                $resTrabajador.hide();
+                selectedIndexTrabajador = -1;
+            }
+        });
+
+        function updateSelectionTrabajador(items) {
+            items.removeClass('active');
+            let current = items.eq(selectedIndexTrabajador);
+            current.addClass('active');
+            current[0].scrollIntoView({ block: 'nearest' });
+        }
+
+        // 3. Evento Selección
+        $(document).on('click', '.item-trabajador', function(e){
+            e.preventDefault();
+            let id = $(this).data('id');
+            let texto = $(this).data('texto');
+            
+            // Crear opción dinámica si no existe (porque el select carga vacío)
+            if ($selectTrabajador.find("option[value='" + id + "']").length == 0) {
+                $selectTrabajador.append(new Option(texto, id, true, true));
+            }
+            
+            $selectTrabajador.val(id).trigger('change');
+            $inputTrabajador.val(texto); // Actualizar input visual
+            $resTrabajador.hide();
+
+            // Foco automático: Si hay Torre visible -> Torre, sino -> Documento
+            if ($('#id_torre_destino').is(':visible')) {
+                $('#id_torre_destino').focus();
+            } else {
+                $('#id_documento_referencia').focus();
+            }
+        });
+
+        // 4. Cerrar al hacer clic fuera
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.input-group').length) {
+                $resTrabajador.hide();
+            }
+        });
+
+        // --- LÓGICA MODAL NUEVO TRABAJADOR ---
+        $('#btn-save-trabajador').click(function() {
+            let btn = $(this);
+            let form = $('#form-quick-trabajador');
+            let errorDiv = $('#msg-error-trabajador');
+            
+            // Limpiar errores previos
+            errorDiv.addClass('d-none').text('');
+            
+            // Validar campos básicos HTML5
+            if (!form[0].checkValidity()) {
+                form[0].reportValidity();
+                return;
+            }
+
+            btn.prop('disabled', true).text('Guardando...');
+
+            $.post("{% url 'api_crear_trabajador' %}", form.serialize() + "&csrfmiddlewaretoken={{ csrf_token }}", function(data) {
+                if (data.success) {
+                    // 1. Agregar opción al select y seleccionarla
+                    let newOption = new Option(data.text, data.id, true, true);
+                    $('#id_trabajador').append(newOption).trigger('change');
+                    
+                    // 1.1 Actualizar también el input visual del buscador
+                    $('#input_buscar_trabajador').val(data.text);
+                    
+                    // 2. Cerrar modal y limpiar
+                    $('#modalNuevoTrabajador').modal('hide');
+                    form[0].reset();
+                } else {
+                    errorDiv.removeClass('d-none').text(data.error);
+                }
+            }).fail(function() {
+                errorDiv.removeClass('d-none').text('Error de conexión con el servidor.');
+            }).always(function() {
+                btn.prop('disabled', false).text('Guardar y Seleccionar');
+            });
+        });
+
+        // 9. GUARDAR CON CTRL+ENTER (Global)
+        $(document).on('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                $('button[type="submit"]').first().click();
+            }
         });
     });
 </script>

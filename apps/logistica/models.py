@@ -181,7 +181,6 @@ class Movimiento(models.Model):
     
     # Referencias
     documento_referencia = models.CharField(max_length=50, help_text="Nro Guía, Factura, Vale")
-    solicitante = models.CharField(max_length=100, blank=True)
     
     requerimiento = models.ForeignKey(Requerimiento, related_name='salidas', on_delete=models.PROTECT, null=True, blank=True, help_text="Requerimiento aprobado que justifica esta salida")
     # Origen / Destino (Lógica flexible)
@@ -190,7 +189,7 @@ class Movimiento(models.Model):
     
     # Solo para Salidas a Obra
     torre_destino = models.ForeignKey(Torre, related_name='consumos', on_delete=models.PROTECT, null=True, blank=True)
-    trabajador = models.ForeignKey(Trabajador, related_name='movimientos_epp', on_delete=models.PROTECT, null=True, blank=True, help_text="Trabajador que recibe el EPP")
+    trabajador = models.ForeignKey(Trabajador, related_name='movimientos', on_delete=models.PROTECT, null=True, blank=True, help_text="Trabajador solicitante o beneficiario")
     
     creado_por = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     observacion = models.TextField(blank=True)
@@ -226,8 +225,8 @@ class Movimiento(models.Model):
         # Validación básica de lógica de negocio
         if self.tipo == 'SALIDA_OBRA' and not self.torre_destino:
             raise ValidationError('Para una Salida a Obra, debes especificar la Torre Destino.')
-        if self.tipo == 'SALIDA_EPP' and not self.trabajador:
-            raise ValidationError('Para una Entrega de EPP, debes seleccionar al Trabajador.')
+        if self.tipo in ['SALIDA_EPP', 'SALIDA_OBRA', 'SALIDA_OFICINA'] and not self.trabajador:
+            raise ValidationError('Para cualquier Salida, debes seleccionar al Trabajador responsable.')
     
     def codigo_visual(self):
         if self.id:
@@ -248,6 +247,16 @@ class DetalleMovimiento(models.Model):
     costo_unitario = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     marca = models.CharField(max_length=100, blank=True, verbose_name="Marca/Modelo")
     series_temporales = models.TextField(blank=True, help_text="Series separadas por coma para activos fijos (Solo Ingresos)")
+    
+    # Nuevo campo para vincular salida de activo fijo específico
+    activo = models.ForeignKey(
+        'activos.Activo', 
+        on_delete=models.PROTECT, 
+        null=True, 
+        blank=True, 
+        related_name='movimientos',
+        help_text="Activo fijo específico entregado (Solo para Salidas)"
+    )
     
     # Nuevo: Permite asignar esta línea específica a un requerimiento distinto al de la cabecera
     requerimiento = models.ForeignKey(
