@@ -169,10 +169,12 @@
             <table class="table table-striped mb-0" id="items-table">
                 <thead>
                     <tr>
-                        <th width="40%">Material</th>
-                        <th width="10%">Cant.</th>
-                        <th width="15%">Costo (S/.)</th>
-                        <th width="30%">Asignar a Req. / Stock Libre</th>
+                        <th width="25%">Material</th>
+                        <th width="8%">Cant.</th>
+                        <th width="10%">Costo (S/.)</th>
+                        <th width="12%">Marca</th>
+                        <th width="15%">Series</th>
+                        <th width="20%">Asignar a Req. / Stock Libre</th>
                         <th width="10%"></th>
                     </tr>
                 </thead>
@@ -196,6 +198,8 @@
                         </td>
                         <td>{{ form.cantidad }}</td>
                         <td>{{ form.costo_unitario }}</td>
+                        <td>{{ form.marca }}</td>
+                        <td>{{ form.series_temporales }}</td>
                         <td>{{ form.seleccion_requerimiento }}</td>
                         <td class="text-center align-middle">
                             <div class="d-none">{{ form.DELETE }}</div> <!-- Checkbox oculto de Django -->
@@ -236,6 +240,8 @@
             </td>
             <td>{{ formset.empty_form.cantidad }}</td>
             <td>{{ formset.empty_form.costo_unitario }}</td>
+            <td>{{ formset.empty_form.marca }}</td>
+            <td>{{ formset.empty_form.series_temporales }}</td>
             <td>{{ formset.empty_form.seleccion_requerimiento }}</td>
             <td class="text-center align-middle">
                 <div class="d-none">{{ formset.empty_form.DELETE }}</div>
@@ -259,6 +265,9 @@
 
     // Mapa inverso: { 'uuid_mat': ['uuid_req1', 'uuid_req2'] }
     const MATS_REQS = JSON.parse('{{ mats_reqs_json|escapejs }}');
+
+    // Mapa de Tipos: { 'uuid_mat': 'ACTIVO_FIJO' | 'CONSUMIBLE' }
+    const TIPOS_MATERIALES = JSON.parse('{{ materiales_tipos_json|escapejs }}');
 
     // --- CARGAR MATERIALES EN MEMORIA (Para búsqueda rápida sin plugins) ---
     const MATERIALES_DISPONIBLES = [
@@ -396,6 +405,20 @@
                 $(this).prop('hidden', true);
             }
         });
+    }
+
+    // --- NUEVO: VISIBILIDAD DE CAMPOS ACTIVO FIJO ---
+    function actualizarVisibilidadActivos(row) {
+        let materialId = row.find('input[name$="-material"]').val();
+        let inputsActivo = row.find('.campo-activo-fijo'); // Clase definida en forms.py
+        
+        if (materialId && TIPOS_MATERIALES[materialId] === 'ACTIVO_FIJO') {
+            inputsActivo.show();
+            inputsActivo.attr('placeholder', inputsActivo.attr('placeholder') + ' (Req)');
+        } else {
+            inputsActivo.hide();
+            inputsActivo.val(''); // Limpiar si cambia de material
+        }
     }
 
     // --- SINCRONIZACIÓN CABECERA -> DETALLES ---
@@ -594,6 +617,9 @@
             // Sincronizar la nueva fila con la cabecera si aplica
             sincronizarRequerimientos();
 
+            // Actualizar visibilidad de campos de Activo Fijo
+            actualizarVisibilidadActivos($newRow);
+
             // Limpiar buscador
             $inputBusqueda.val('');
             $listaResultados.empty().hide(); // Vaciar lista para evitar selección fantasma
@@ -713,6 +739,37 @@
                 });
             });
 
+            // D. Validación de Series para Activos Fijos (NUEVO)
+            let errorSeries = false;
+            $('#form-list tr.item-row').each(function() {
+                // Solo validamos filas visibles y que no estén marcadas para borrar
+                if ($(this).is(':visible') && !$(this).find('input[name$="-DELETE"]').is(':checked')) {
+                    let materialId = $(this).find('input[name$="-material"]').val();
+                    let cantidad = parseFloat($(this).find('input[name$="-cantidad"]').val()) || 0;
+                    let seriesInput = $(this).find('input[name$="-series_temporales"]');
+                    
+                    // Si es Activo Fijo y estamos en un Ingreso
+                    if (materialId && TIPOS_MATERIALES[materialId] === 'ACTIVO_FIJO' && TIPO_ACCION.includes('INGRESO')) {
+                        let textoSeries = seriesInput.val() || "";
+                        // Convertir texto "A, B, C" en array ["A", "B", "C"]
+                        let listaSeries = textoSeries.split(',').filter(s => s.trim() !== '');
+                        
+                        if (listaSeries.length !== cantidad) {
+                            alert(`⚠️ Error en Activo Fijo:\n\nEstás ingresando ${cantidad} unidades de un Activo Fijo.\nDebes escribir exactamente ${cantidad} series separadas por comas.\n\n(Actualmente hay ${listaSeries.length} series)`);
+                            seriesInput.addClass('is-invalid').focus();
+                            errorSeries = true;
+                            return false; // Romper el bucle each
+                        } else {
+                            seriesInput.removeClass('is-invalid');
+                        }
+                    }
+                }
+            });
+            if (errorSeries) {
+                e.preventDefault();
+                return false;
+            }
+
             // C. Validar que quede al menos una fila válida
             let filasValidas = 0;
             $('#form-list tr.item-row').each(function() {
@@ -784,6 +841,11 @@
         } else {
              sincronizarRequerimientos(false); // false = Respetar lo que venga (Edición o Error)
         }
+
+        // Inicializar visibilidad de activos fijos para filas existentes (Edición)
+        $('#form-list tr.item-row').each(function() {
+            actualizarVisibilidadActivos($(this));
+        });
     });
 </script>
 {% endblock %}

@@ -35,4 +35,4 @@ Sistema integral desarrollado en Django para el control logístico, gestión de 
 1. **Clonar el repositorio**
    ```bash
    git clone https://github.com/TU_USUARIO/almacen_torres_alta_tension.git
-   cd almacen_obra
+   cd almacen_torres_alta_tension

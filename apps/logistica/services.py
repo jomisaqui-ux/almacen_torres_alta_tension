@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum, F
 from decimal import Decimal
 from .models import Movimiento, Stock, Existencia, DetalleRequerimiento
+from apps.activos.models import Activo
 
 class KardexService:
     @staticmethod
@@ -37,6 +38,9 @@ class KardexService:
             # --- GRUPO INGRESOS (Suman Stock) ---
             if movimiento.tipo in ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA']:
                 KardexService._procesar_ingreso(movimiento, detalle, existencia)
+                
+                # NUEVO: Si es Activo Fijo, creamos las fichas individuales
+                KardexService._procesar_creacion_activos(movimiento, detalle)
                 
                 # NUEVA LÓGICA: Conciliación de Ingreso (Manual o FIFO)
                 KardexService._conciliar_ingreso_detalle(movimiento, detalle)
@@ -94,6 +98,51 @@ class KardexService:
         # Actualizamos la cantidad total del proyecto
         existencia.stock_total_proyecto += detalle.cantidad
         existencia.save()
+
+    @staticmethod
+    def _procesar_creacion_activos(movimiento, detalle):
+        """
+        Verifica si el material es ACTIVO_FIJO y crea los registros individuales
+        basados en las series ingresadas.
+        """
+        if detalle.material.tipo == 'ACTIVO_FIJO' and movimiento.tipo == 'INGRESO_COMPRA':
+            # 1. Obtener series limpias
+            raw_series = detalle.series_temporales or ""
+            lista_series = [s.strip() for s in raw_series.split(',') if s.strip()]
+            
+            cantidad_entera = int(detalle.cantidad)
+            
+            # 2. Validaciones
+            if not lista_series:
+                # Si no puso series, generamos genéricas o lanzamos error. 
+                # Para robustez, lanzamos error si es Activo Fijo.
+                raise ValidationError(f"El material {detalle.material} es un Activo Fijo. Debes ingresar las series separadas por coma (Cant: {cantidad_entera}).")
+            
+            if len(lista_series) != cantidad_entera:
+                raise ValidationError(f"Error en {detalle.material}: Ingresaste {len(lista_series)} series ({raw_series}) pero la cantidad es {cantidad_entera}. Deben coincidir.")
+
+            # 3. Creación de Activos
+            for i, serie in enumerate(lista_series):
+                # Verificar unicidad de serie
+                if Activo.objects.filter(serie=serie).exists():
+                    raise ValidationError(f"La serie '{serie}' ya existe en el sistema de Activos.")
+
+                # Generar código interno: CODIGO_MATERIAL-SERIE (o un correlativo si prefieres)
+                # Usamos una lógica simple para asegurar unicidad visual
+                codigo_interno = f"{detalle.material.codigo}-{serie}"
+                
+                # Crear el Activo
+                Activo.objects.create(
+                    codigo=codigo_interno[:50], # Truncar por seguridad
+                    serie=serie,
+                    nombre=detalle.material.descripcion,
+                    marca=detalle.marca, # Usamos la marca ingresada en la línea
+                    modelo="", # Opcional, podría venir en el mismo campo marca
+                    estado='DISPONIBLE',
+                    fecha_compra=movimiento.fecha.date(),
+                    valor_compra=detalle.costo_unitario,
+                    # No asignamos kit ni trabajador todavía
+                )
 
     @staticmethod
     def _conciliar_ingreso_detalle(movimiento, detalle):

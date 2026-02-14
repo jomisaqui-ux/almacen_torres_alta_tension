@@ -99,16 +99,19 @@ class DetalleMovimientoForm(forms.ModelForm):
 
     class Meta:
         model = DetalleMovimiento
-        fields = ['material', 'cantidad', 'costo_unitario'] 
+        fields = ['material', 'cantidad', 'costo_unitario', 'marca', 'series_temporales'] 
         widgets = {
             # Usamos HiddenInput para evitar renderizar el select pesado en cada fila
             'material': forms.HiddenInput(),
             
             'cantidad': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Cant.'}),
             'costo_unitario': forms.NumberInput(attrs={'step': '0.01', 'placeholder': 'Precio S/.'}),
+            'marca': forms.TextInput(attrs={'placeholder': 'Marca / Modelo', 'class': 'form-control-sm campo-activo-fijo'}),
+            'series_temporales': forms.TextInput(attrs={'placeholder': 'Series (sep. por comas)', 'class': 'form-control-sm campo-activo-fijo'}),
         }
     
     def __init__(self, *args, tipo_accion=None, **kwargs):
+        self.tipo_accion = tipo_accion # Guardamos el tipo para usarlo en clean()
         super().__init__(*args, **kwargs)
         # Hacemos que el costo sea opcional (para Salidas o cuando no se tiene el dato)
         self.fields['costo_unitario'].required = False
@@ -153,6 +156,24 @@ class DetalleMovimientoForm(forms.ModelForm):
                 field.widget.attrs['class'] = existing_class + ' form-select'
             elif 'form-control' not in existing_class:
                 field.widget.attrs['class'] = existing_class + ' form-control'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        material = cleaned_data.get('material')
+        cantidad = cleaned_data.get('cantidad')
+        series = cleaned_data.get('series_temporales')
+        
+        # Validar solo en Ingresos y si es Activo Fijo
+        if self.tipo_accion == 'ingreso' and material and material.tipo == 'ACTIVO_FIJO':
+            if cantidad:
+                # Convertimos series a lista, eliminando espacios vacíos
+                lista_series = [s.strip() for s in (series or "").split(',') if s.strip()]
+                cantidad_entera = int(cantidad)
+                
+                if len(lista_series) != cantidad_entera:
+                    self.add_error('series_temporales', f"Debes ingresar {cantidad_entera} series separadas por comas. (Ingresaste {len(lista_series)})")
+        
+        return cleaned_data
 
     def save(self, commit=True):
         """Sobreescribimos save para traducir el campo 'seleccion_requerimiento' a los campos del modelo."""

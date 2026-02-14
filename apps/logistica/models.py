@@ -246,6 +246,8 @@ class DetalleMovimiento(models.Model):
     
     # El costo unitario se guarda aquí para la historia, aunque cambie el PMP mañana.
     costo_unitario = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    marca = models.CharField(max_length=100, blank=True, verbose_name="Marca/Modelo")
+    series_temporales = models.TextField(blank=True, help_text="Series separadas por coma para activos fijos (Solo Ingresos)")
     
     # Nuevo: Permite asignar esta línea específica a un requerimiento distinto al de la cabecera
     requerimiento = models.ForeignKey(

@@ -423,7 +423,8 @@ def operacion_almacen(request, tipo_accion, almacen_id):
         'materiales_disponibles': Material.objects.filter(activo=True).order_by('codigo'),
         'reqs_materiales_json': json.dumps(reqs_map),
         'mats_reqs_json': json.dumps(mats_reqs_map), # Enviamos el nuevo mapa al template
-        'trabajadores_disponibles': Trabajador.objects.filter(activo=True).order_by('nombres') # Para el autofiltro de solicitante
+        'trabajadores_disponibles': Trabajador.objects.filter(activo=True).order_by('nombres'), # Para el autofiltro de solicitante
+        'materiales_tipos_json': json.dumps({str(id): tipo for id, tipo in Material.objects.values_list('id', 'tipo')}) # Mapa de tipos para JS
     }
     return render(request, 'logistica/operacion_form.html', context)
 

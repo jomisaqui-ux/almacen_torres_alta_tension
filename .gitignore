@@ -20,6 +20,7 @@ media/
 *.log
 generar_contexto.py
 contexto_proyecto_completo.txt
-
+PROMPT PARA CURSOR.docx
+~$OMPT PARA CURSOR.docx
 # Migraciones (Mantenemos los archivos, ignoramos cache)
 */migrations/__pycache__/
