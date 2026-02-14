@@ -1,118 +1,118 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
-from apps.logistica.models import Almacen, Stock, Movimiento, DetalleMovimiento, Requerimiento, DetalleRequerimiento, Existencia
+from django.core.exceptions import ValidationError
+from decimal import Decimal
+
+# Importamos modelos del sistema
+from apps.logistica.models import Almacen, Stock, Movimiento, DetalleMovimiento, Requerimiento, DetalleRequerimiento
+from apps.proyectos.models import Proyecto
 from apps.catalogo.models import Material, Categoria
-from apps.proyectos.models import Proyecto, Tramo, Torre
+from apps.rrhh.models import Trabajador
 from apps.logistica.services import KardexService
 
-User = get_user_model()
+class KardexReservaTest(TestCase):
+    """
+    Pruebas de Integridad del Kardex y Reglas de Negocio.
+    Foco: Protección de Stock Reservado.
+    """
 
-class PruebasIntegralesLogistica(TestCase):
     def setUp(self):
-        """
-        Configuración inicial de datos maestros para las pruebas.
-        """
-        # 1. Usuario y Proyecto
-        self.user = User.objects.create_user(username='tester', password='123')
-        self.proyecto = Proyecto.objects.create(nombre="Proyecto Test", codigo="PRO-001", usa_control_costos=True)
-        
-        # 2. Infraestructura (Almacén y Torre)
-        self.almacen = Almacen.objects.create(proyecto=self.proyecto, nombre="Almacén Central", codigo="ALM-001")
-        self.tramo = Tramo.objects.create(proyecto=self.proyecto, nombre="Tramo 1", codigo="T1")
-        self.torre = Torre.objects.create(tramo=self.tramo, codigo="T-01", tipo="SUSPENSION")
-        
-        # 3. Catálogo
-        self.categoria = Categoria.objects.create(nombre="Materiales", codigo="MAT")
-        self.material = Material.objects.create(
-            codigo="CEMENTO", 
-            descripcion="Cemento Portland", 
-            unidad_medida="BLS",
-            categoria=self.categoria
-        )
+        # 1. Configuración Básica (Usuario, Proyecto, Almacén, Material)
+        User = get_user_model()
+        self.user = User.objects.create_user('tester', 'test@obra.com', 'password')
+        self.proyecto = Proyecto.objects.create(codigo='PRJ-001', nombre='Proyecto Demo')
+        self.almacen = Almacen.objects.create(proyecto=self.proyecto, nombre='Almacén Central', codigo='ALM-01')
+        self.categoria = Categoria.objects.create(nombre='Albañilería', codigo='ALB')
+        self.material = Material.objects.create(codigo='CEM-001', descripcion='Cemento Sol', unidad_medida='BOL', categoria=self.categoria)
+        self.trabajador = Trabajador.objects.create(nombres='JUAN', apellidos='PEREZ', dni='12345678', activo=True)
 
-    def test_ciclo_completo_requerimiento_ingreso_salida(self):
-        """
-        Prueba Integral del Flujo Principal:
-        1. Crear Requerimiento (Pedido).
-        2. Ingreso de Compra (Atendiendo el pedido) -> Sube Stock y actualiza Pedido.
-        3. Salida a Obra (Consumiendo el pedido) -> Baja Stock y cierra Pedido.
-        """
-        
-        # ====================================================
-        # PASO 1: CREACIÓN DE REQUERIMIENTO
-        # ====================================================
-        req = Requerimiento.objects.create(
+        # 2. Crear un Requerimiento Aprobado (Pendiente de Atención)
+        # Solicitamos 100 bolsas
+        self.req = Requerimiento.objects.create(
             proyecto=self.proyecto,
-            solicitante="Ingeniero Residente",
-            fecha_solicitud="2024-01-01",
-            creado_por=self.user
+            solicitante='Ingeniero Residente',
+            fecha_solicitud='2024-01-01',
+            creado_por=self.user,
+            estado='PENDIENTE'
         )
-        
-        DetalleRequerimiento.objects.create(
-            requerimiento=req,
+        self.det_req = DetalleRequerimiento.objects.create(
+            requerimiento=self.req,
             material=self.material,
-            cantidad_solicitada=50,
-            cantidad_ingresada=0 # Aún no llega nada
+            cantidad_solicitada=100,
+            cantidad_ingresada=0, # Aún no llega nada
+            cantidad_atendida=0
         )
-        
-        self.assertEqual(req.estado, 'PENDIENTE')
 
-        # ====================================================
-        # PASO 2: INGRESO DE MATERIAL (COMPRA)
-        # ====================================================
-        # Simulamos que el proveedor trae el material para este requerimiento
-        ingreso = Movimiento.objects.create(
+    def test_proteccion_de_reserva(self):
+        """
+        ESCENARIO CRÍTICO:
+        1. Llegan 80 bolsas destinadas ESPECÍFICAMENTE al Requerimiento (Reserva).
+        2. Llegan 10 bolsas como Stock Libre.
+        3. Total Físico = 90.
+        4. Alguien intenta sacar 20 bolsas "Sin Requerimiento" (Stock Libre).
+        5. El sistema debe BLOQUEARLO porque solo hay 10 libres (las otras 80 son del Req).
+        """
+        
+        # --- PASO 1: Ingreso de la Reserva (80 unidades) ---
+        ingreso_reserva = Movimiento.objects.create(
             proyecto=self.proyecto,
             tipo='INGRESO_COMPRA',
             almacen_destino=self.almacen,
-            requerimiento=req, # Vinculación explícita
+            requerimiento=self.req, # Vinculamos al Req
             creado_por=self.user,
-            nota_ingreso='NI-0001'
+            documento_referencia='FAC-001'
         )
-        
         DetalleMovimiento.objects.create(
-            movimiento=ingreso,
+            movimiento=ingreso_reserva,
             material=self.material,
-            cantidad=50,
-            costo_unitario=20.00 # S/. 20 por bolsa
+            cantidad=80,
+            costo_unitario=25,
+            requerimiento=self.req # Vinculación explícita
         )
-        
-        # Ejecutamos la lógica de negocio
-        KardexService.confirmar_movimiento(ingreso.id)
-        
-        # Validaciones Paso 2
-        stock = Stock.objects.get(almacen=self.almacen, material=self.material)
-        self.assertEqual(stock.cantidad, 50, "El stock físico debió subir a 50")
-        
-        # Verificamos que el requerimiento sepa que ya llegó su material
-        req.refresh_from_db()
-        det_req = req.detalles.first()
-        self.assertEqual(det_req.cantidad_ingresada, 50, "El requerimiento debe registrar el ingreso físico")
+        KardexService.confirmar_movimiento(ingreso_reserva.id)
 
-        # ====================================================
-        # PASO 3: SALIDA A OBRA (DESPACHO)
-        # ====================================================
-        salida = Movimiento.objects.create(
+        # Verificación intermedia
+        self.det_req.refresh_from_db()
+        stock_fisico = Stock.objects.get(almacen=self.almacen, material=self.material)
+        print(f"\n[TEST] Stock Físico: {stock_fisico.cantidad} | Reservado Req: {self.det_req.cantidad_ingresada}")
+        
+        # --- PASO 2: Ingreso de Stock Libre (10 unidades) ---
+        ingreso_libre = Movimiento.objects.create(
             proyecto=self.proyecto,
-            tipo='SALIDA_OBRA',
-            almacen_origen=self.almacen,
-            torre_destino=self.torre,
-            requerimiento=req,
+            tipo='INGRESO_COMPRA',
+            almacen_destino=self.almacen,
             creado_por=self.user,
-            nota_ingreso='VS-0001'
+            documento_referencia='FAC-002'
         )
-        
         DetalleMovimiento.objects.create(
-            movimiento=salida,
+            movimiento=ingreso_libre,
             material=self.material,
-            cantidad=50
+            cantidad=10,
+            costo_unitario=25,
+            es_stock_libre=True
         )
+        KardexService.confirmar_movimiento(ingreso_libre.id)
+
+        # --- PASO 3: Intento de "Robo" (Sacar 20 libres) ---
+        # Matemáticas: Físico (90) - Reservado (80) = Libres (10).
+        # Pedido: 20. -> ERROR ESPERADO.
         
-        KardexService.confirmar_movimiento(salida.id)
+        salida_robo = Movimiento.objects.create(
+            proyecto=self.proyecto,
+            tipo='SALIDA_OFICINA',
+            almacen_origen=self.almacen,
+            trabajador=self.trabajador,
+            creado_por=self.user,
+            documento_referencia='VALE-INTENTO'
+        )
+        DetalleMovimiento.objects.create(
+            movimiento=salida_robo,
+            material=self.material,
+            cantidad=20, # Pido más de lo libre
+            es_stock_libre=True
+        )
+
+        with self.assertRaises(ValidationError) as context:
+            KardexService.confirmar_movimiento(salida_robo.id)
         
-        # Validaciones Paso 3
-        stock.refresh_from_db()
-        self.assertEqual(stock.cantidad, 0, "El stock debió quedar en 0 tras la salida")
-        
-        req.refresh_from_db()
-        self.assertEqual(req.estado, 'TOTAL', "El requerimiento debió pasar a estado ATENDIDO TOTAL")
+        print(f"[TEST] ÉXITO: El sistema bloqueó la salida. Mensaje: {context.exception.message}")

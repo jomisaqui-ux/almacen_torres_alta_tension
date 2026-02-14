@@ -21,12 +21,34 @@ from .models import Movimiento, DetalleMovimiento, Stock, Almacen, Material, Pro
 from .forms import MovimientoForm, DetalleMovimientoFormSet, RequerimientoForm, DetalleRequerimientoFormSet
 from .services import KardexService
 from apps.rrhh.models import Trabajador
-from apps.activos.models import Activo, AsignacionActivo
+from apps.activos.models import Activo, AsignacionActivo, Kit
 from apps.core.models import Configuracion
 
 # ==========================================
 # 1. REPORTES Y PDF
 # ==========================================
+
+# --- NUEVA VISTA: CAMBIAR ALMACÉN ACTIVO ---
+def cambiar_almacen_sesion(request, almacen_id):
+    """
+    Establece el almacén activo en la sesión del usuario.
+    """
+    almacen = get_object_or_404(Almacen, id=almacen_id)
+    request.session['almacen_activo_id'] = str(almacen.id)
+    messages.success(request, f"Trabajando ahora en: {almacen.nombre}")
+    
+    # Redirigir a la página donde estaba (o al dashboard si no hay referer)
+    return redirect(request.META.get('HTTP_REFERER', 'inventario_list'))
+
+def limpiar_almacen_sesion(request):
+    """
+    Elimina el almacén activo de la sesión (Modo Vista Global).
+    """
+    if 'almacen_activo_id' in request.session:
+        del request.session['almacen_activo_id']
+        messages.info(request, "Modo Vista Global activado.")
+    
+    return redirect(request.META.get('HTTP_REFERER', 'dashboard'))
 
 def generar_vale_pdf(request, movimiento_id):
     movimiento = get_object_or_404(Movimiento, id=movimiento_id)
@@ -91,6 +113,11 @@ def inventario_list(request):
             Q(material__descripcion__icontains=query)
         )
     
+    # FILTRO POR CONTEXTO DE ALMACÉN
+    almacen_activo = getattr(request, 'almacen_activo', None)
+    if almacen_activo:
+        stocks_filter = stocks_filter.filter(almacen=almacen_activo)
+
     # Si viene del dashboard (clic en tarjeta roja), filtramos solo los críticos
     if filtro == 'critico':
         stocks_filter = stocks_filter.filter(cantidad__lte=F('cantidad_minima'), cantidad_minima__gt=0)
@@ -101,9 +128,16 @@ def inventario_list(request):
             cantidad_minima__gt=0
         )
 
-    almacenes = Almacen.objects.prefetch_related(
-        Prefetch('stocks', queryset=stocks_filter)
-    ).distinct()
+    # Si hay almacén activo, solo mostramos ese almacén en la lista
+    if almacen_activo:
+        # CORRECCIÓN: Usamos filter(id=...) para mantener el prefetch_related con el filtro de stocks (búsqueda/alertas)
+        almacenes = Almacen.objects.filter(id=almacen_activo.id).prefetch_related(
+            Prefetch('stocks', queryset=stocks_filter)
+        ).distinct()
+    else:
+        almacenes = Almacen.objects.prefetch_related(
+            Prefetch('stocks', queryset=stocks_filter)
+        ).distinct()
 
     context = {
         'almacenes': almacenes,
@@ -124,6 +158,14 @@ def movimiento_list(request):
         'torre_destino',
         'proyecto'
     ).order_by('-fecha')
+
+    # FILTRO POR CONTEXTO DE ALMACÉN
+    almacen_activo = getattr(request, 'almacen_activo', None)
+    if almacen_activo:
+        qs = qs.filter(
+            Q(almacen_origen=almacen_activo) | 
+            Q(almacen_destino=almacen_activo)
+        )
 
     if estado:
         qs = qs.filter(estado=estado)
@@ -306,7 +348,11 @@ def operacion_almacen(request, tipo_accion, almacen_id):
     CORRECCIONES: Usuario, Proyecto, Filtros y GENERADOR DOBLE (NI/VS).
     """
     if str(almacen_id) == '00000000-0000-0000-0000-000000000000':
-        almacen = None
+        # Si no viene almacén en la URL, intentamos usar el de la sesión
+        if hasattr(request, 'almacen_activo') and request.almacen_activo:
+            almacen = request.almacen_activo
+        else:
+            almacen = None
     else:
         almacen = get_object_or_404(Almacen, id=almacen_id)
     
@@ -314,14 +360,26 @@ def operacion_almacen(request, tipo_accion, almacen_id):
     if request.GET.get('tipo'):
         tipo_default = request.GET.get('tipo')
 
+    # Lógica dinámica: Si estamos en un almacén, definimos si es Origen o Destino
     initial_data = {
-        'almacen_origen': almacen,
         'tipo': tipo_default
     }
+    if almacen:
+        if tipo_accion == 'ingreso':
+            initial_data['almacen_destino'] = almacen
+        else:
+            initial_data['almacen_origen'] = almacen
+    
+    # Determinamos el ID del almacén para filtrar los activos en el formset
+    filtro_almacen_id = almacen.id if almacen else None
 
     if request.method == 'POST':
         form = MovimientoForm(request.POST, tipo_accion=tipo_accion)
-        formset = DetalleMovimientoFormSet(request.POST, form_kwargs={'tipo_accion': tipo_accion})
+        # Si es POST y no tenemos almacén en URL (vista genérica), intentamos sacarlo del POST
+        if not filtro_almacen_id:
+            filtro_almacen_id = request.POST.get('almacen_origen')
+            
+        formset = DetalleMovimientoFormSet(request.POST, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
         if form.is_valid():
             nuevo_mov = form.save(commit=False)
             
@@ -368,7 +426,7 @@ def operacion_almacen(request, tipo_accion, almacen_id):
             nuevo_mov.save()
             form.save_m2m() 
             
-            formset = DetalleMovimientoFormSet(request.POST, instance=nuevo_mov, form_kwargs={'tipo_accion': tipo_accion})
+            formset = DetalleMovimientoFormSet(request.POST, instance=nuevo_mov, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
             if formset.is_valid():
                 formset.save()
                 
@@ -389,7 +447,7 @@ def operacion_almacen(request, tipo_accion, almacen_id):
                 messages.error(request, 'Error en los detalles de los materiales.')
     else:
         form = MovimientoForm(initial=initial_data, tipo_accion=tipo_accion)
-        formset = DetalleMovimientoFormSet(form_kwargs={'tipo_accion': tipo_accion})
+        formset = DetalleMovimientoFormSet(form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
 
     # =========================================================================
     # 🛡️ FILTRO DINÁMICO DEL DESPLEGABLE
@@ -461,10 +519,12 @@ def editar_movimiento(request, movimiento_id):
     # Determinamos el tipo de acción basado en el movimiento existente
     es_ingreso = 'INGRESO' in movimiento.tipo or 'DEVOLUCION' in movimiento.tipo or 'ENTRADA' in movimiento.tipo
     tipo_accion = 'ingreso' if es_ingreso else 'salida'
+    
+    filtro_almacen_id = movimiento.almacen_origen_id
 
     if request.method == 'POST':
         form = MovimientoForm(request.POST, instance=movimiento, tipo_accion=tipo_accion)
-        formset = DetalleMovimientoFormSet(request.POST, instance=movimiento, form_kwargs={'tipo_accion': tipo_accion})
+        formset = DetalleMovimientoFormSet(request.POST, instance=movimiento, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
         
         if form.is_valid() and formset.is_valid():
             try:
@@ -477,7 +537,7 @@ def editar_movimiento(request, movimiento_id):
                 messages.error(request, f"Error al actualizar: {e}")
     else:
         form = MovimientoForm(instance=movimiento, tipo_accion=tipo_accion)
-        formset = DetalleMovimientoFormSet(instance=movimiento, form_kwargs={'tipo_accion': tipo_accion})
+        formset = DetalleMovimientoFormSet(instance=movimiento, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
 
     almacen_contexto = movimiento.almacen_origen or movimiento.almacen_destino
 
@@ -631,6 +691,11 @@ def reset_database(request):
         messages.error(request, "Acceso denegado. Solo administradores.")
         return redirect('dashboard')
 
+    # Validar que estemos en modo global (sin almacén activo)
+    if getattr(request, 'almacen_activo', None):
+        messages.warning(request, "Para resetear el sistema debes estar en 'Vista Global'. Por seguridad, sal del almacén actual.")
+        return redirect('dashboard')
+
     if request.method == 'POST':
         password = request.POST.get('password')
         if not request.user.check_password(password):
@@ -644,6 +709,7 @@ def reset_database(request):
                     # 2. Eliminar Activos Fijos y Asignaciones (Rompe dependencia con Movimientos)
                     AsignacionActivo.objects.all().delete()
                     Activo.objects.all().delete()
+                    Kit.objects.all().delete()
 
                     # 3. Eliminar Movimientos (Ahora sí se puede)
                     Movimiento.objects.all().delete()

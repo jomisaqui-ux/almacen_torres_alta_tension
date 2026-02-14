@@ -1,9 +1,8 @@
 from django.urls import path
-from .views import ActivoListView, ActivoCreateView, ActivoUpdateView, ActivoDetailView, asignar_activo, devolver_activo, KitListView, KitCreateView, asignar_kit, administrar_kit
+from .views import ActivoListView, ActivoUpdateView, ActivoDetailView, asignar_activo, devolver_activo, KitListView, KitCreateView, asignar_kit, administrar_kit
 
 urlpatterns = [
     path('', ActivoListView.as_view(), name='activo_list'),
-    path('nuevo/', ActivoCreateView.as_view(), name='activo_create'),
     path('editar/<uuid:pk>/', ActivoUpdateView.as_view(), name='activo_update'),
     path('detalle/<uuid:pk>/', ActivoDetailView.as_view(), name='activo_detail'),
     path('asignar/<uuid:pk>/', asignar_activo, name='activo_asignar'),

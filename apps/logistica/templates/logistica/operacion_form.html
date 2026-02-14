@@ -337,12 +337,36 @@
         let divTorre = $('#id_torre_destino').closest('.col-md-4');
         let divTrabajador = $('#id_trabajador').closest('.col-md-4');
         let labelTrabajador = divTrabajador.find('label');
+        let divRequerimiento = $('#id_requerimiento').closest('.col-md-4');
 
         // LÓGICA DE VISIBILIDAD
+        
+        // 1. CASO ESPECIAL: TRANSFERENCIA SALIDA (Prioridad Alta)
+        if (tipoValor === 'TRANSFERENCIA_SALIDA') {
+            divRequerimiento.hide();
+            divOrigen.hide(); // Se oculta visualmente (ya sabemos que sale de aquí)
+            divDestino.show(); // Se habilita destino (A dónde va)
+            divTorre.hide();
+            divTrabajador.hide();
+            
+            // Ajuste de columnas (Es Salida)
+            $('.col-ingreso').hide();
+            $('.col-salida').show();
+            $('th.col-ingreso').attr('width', '0%');
+            $('th.col-salida').attr('width', '27%');
+            return; // Salimos para no ejecutar lógica de otros tipos
+        }
+
         if (tipoTexto.includes('INGRESO') || tipoTexto.includes('DEVOLUCION') || tipoTexto.includes('ENTRADA')) {
             // === ES UN INGRESO ===
+            divRequerimiento.show();
             // 1. Origen: Se oculta (viene de proveedor externo)
-            divOrigen.hide(); 
+            // EXCEPCIÓN: Si es Transferencia de Entrada, necesitamos ver de dónde viene
+            if (tipoTexto.includes('TRANSFERENCIA')) {
+                divOrigen.show();
+            } else {
+                divOrigen.hide();
+            }
             
             // 2. Destino: Se muestra (es donde entra)
             divDestino.show();
@@ -373,6 +397,7 @@
 
         } else if (tipoTexto.includes('SALIDA') || tipoTexto.includes('CONSUMO')) {
             // === ES UNA SALIDA ===
+            divRequerimiento.show();
             // 1. Origen: Se muestra (sale de aquí)
             divOrigen.show();
             if(!$('#id_almacen_origen').val()) {
@@ -407,6 +432,7 @@
 
         } else if (tipoTexto.includes('TRANSFERENCIA')) {
             // === ES TRANSFERENCIA ===
+            divRequerimiento.hide();
             divOrigen.show();
             divDestino.show();
             divTorre.hide();

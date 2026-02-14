@@ -55,6 +55,9 @@ class TrabajadorDetailView(DetailView):
         context['epps'] = EntregaEPP.objects.filter(
             trabajador=self.object
         ).select_related('material', 'movimiento_origen').order_by('-fecha_entrega')
+        
+        # Activos en poder del trabajador (Deuda actual Global)
+        context['activos_asignados'] = self.object.activos_actuales.select_related('material', 'kit').all().order_by('codigo')
         return context
 
 def generar_constancia_pdf(request, pk):
@@ -62,12 +65,20 @@ def generar_constancia_pdf(request, pk):
     activos_pendientes = trabajador.activos_actuales.all()
     
     # Definimos si es Libre Adeudo o Reporte de Deuda
+    # Al ser una relación directa con Activo, esto busca en TODA la base de datos (Global)
     tiene_deuda = activos_pendientes.exists()
-    titulo = "REPORTE DE ADEUDOS PENDIENTES" if tiene_deuda else "CONSTANCIA DE LIBRE ADEUDO"
+    
+    if tiene_deuda:
+        titulo = "REPORTE DE ADEUDOS PENDIENTES"
+        subtitulo = "El trabajador mantiene los siguientes activos pendientes de devolución en los almacenes de la empresa:"
+    else:
+        titulo = "CONSTANCIA DE LIBRE ADEUDO"
+        subtitulo = "Por medio de la presente se hace constar que el trabajador NO registra deudas de activos ni herramientas a la fecha."
+
     config = Configuracion.objects.first()
 
     # Generar Código QR
-    qr_data = f"DOC: {titulo}\nTRABAJADOR: {trabajador.dni}\nFECHA: {timezone.now().strftime('%d/%m/%Y')}"
+    qr_data = f"DOC: {titulo}\nTRABAJADOR: {trabajador.dni}\nFECHA: {timezone.now().strftime('%d/%m/%Y')}\nESTADO: {'CON DEUDA' if tiene_deuda else 'LIBRE'}"
     qr = qrcode.make(qr_data)
     buffer = BytesIO()
     qr.save(buffer, format="PNG")
@@ -78,6 +89,7 @@ def generar_constancia_pdf(request, pk):
         'trabajador': trabajador,
         'activos': activos_pendientes,
         'titulo': titulo,
+        'subtitulo': subtitulo,
         'tiene_deuda': tiene_deuda,
         'config': config,
         'qr_code': qr_img

@@ -50,6 +50,16 @@ class Activo(models.Model):
     )
 
     # Control de ubicación actual
+    ubicacion = models.ForeignKey(
+        'logistica.Almacen',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='activos_en_ubicacion',
+        help_text="Almacén físico donde se encuentra actualmente"
+    )
+
+    # Control de ubicación actual
     trabajador_asignado = models.ForeignKey(
         Trabajador, 
         on_delete=models.SET_NULL, 

@@ -96,7 +96,7 @@
                     </li>
                 </ul>
 
-                {% if request.user.is_superuser %}
+                {% if request.user.is_superuser and not almacen_activo %}
                 <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
                     <span>Administración</span>
                 </h6>
@@ -115,6 +115,34 @@
             <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                 <h1 class="h2">{% block header %}Panel Principal{% endblock %}</h1>
                 <div class="btn-toolbar mb-2 mb-md-0">
+                    
+                    <!-- SELECTOR DE ALMACÉN (CONTEXTO GLOBAL) -->
+                    <div class="btn-group me-3">
+                        <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                            {% if almacen_activo %}
+                                <i class="fas fa-warehouse me-1"></i> {{ almacen_activo.nombre }}
+                            {% else %}
+                                <i class="fas fa-globe me-1"></i> Vista Global
+                            {% endif %}
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow">
+                            <li><h6 class="dropdown-header">Seleccionar Sede de Trabajo</h6></li>
+                            {% for alm in lista_almacenes %}
+                                <li>
+                                    <a class="dropdown-item {% if almacen_activo.id == alm.id %}active{% endif %}" 
+                                       href="{% url 'cambiar_almacen_sesion' alm.id %}">
+                                        <i class="fas fa-map-marker-alt me-2"></i> {{ alm.nombre }}
+                                        {% if alm.es_principal %}<span class="badge bg-light text-dark ms-1">Principal</span>{% endif %}
+                                    </a>
+                                </li>
+                            {% endfor %}
+                            {% if almacen_activo %}
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item small text-muted" href="{% url 'limpiar_almacen_sesion' %}">Ver Todo (Admin)</a></li>
+                            {% endif %}
+                        </ul>
+                    </div>
+
                     <div class="btn-group me-2">
                         <button type="button" class="btn btn-sm btn-outline-secondary">
                             <i class="fas fa-user-circle"></i> {{ user.username }}

@@ -19,9 +19,15 @@ class ActivoListView(ListView):
     ordering = ['codigo']
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        # Optimizamos con select_related para traer la ubicación en una sola consulta
+        queryset = super().get_queryset().select_related('ubicacion', 'trabajador_asignado')
         q = self.request.GET.get('q')
         estado = self.request.GET.get('estado')
+        ubicacion = self.request.GET.get('ubicacion') # Nuevo filtro
+
+        # FILTRO AUTOMÁTICO POR SESIÓN
+        if hasattr(self.request, 'almacen_activo') and self.request.almacen_activo:
+            queryset = queryset.filter(ubicacion=self.request.almacen_activo)
 
         if q:
             queryset = queryset.filter(
@@ -32,6 +38,9 @@ class ActivoListView(ListView):
         
         if estado:
             queryset = queryset.filter(estado=estado)
+        
+        if ubicacion:
+            queryset = queryset.filter(ubicacion_id=ubicacion)
             
         return queryset
 
@@ -39,18 +48,9 @@ class ActivoListView(ListView):
         context = super().get_context_data(**kwargs)
         context['q'] = self.request.GET.get('q', '')
         context['estado_filtro'] = self.request.GET.get('estado', '')
+        context['ubicacion_filtro'] = self.request.GET.get('ubicacion', '')
         context['estados'] = Activo.ESTADOS # Pasamos las opciones al template
-        return context
-
-class ActivoCreateView(CreateView):
-    model = Activo
-    form_class = ActivoForm
-    template_name = 'activos/activo_form.html'
-    success_url = reverse_lazy('activo_list')
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['titulo'] = 'Registrar Nuevo Activo'
+        context['almacenes'] = Almacen.objects.all() # Para llenar el select de filtro
         return context
 
 class ActivoUpdateView(UpdateView):
@@ -147,30 +147,30 @@ def devolver_activo(request, pk):
                         asignacion.save()
                     
                     # 2. Liberar Activo
+                    # --- NUEVA LÓGICA: DETERMINAR UBICACIÓN DE RETORNO (ROAMING) ---
+                    # Prioridad 1: Almacén seleccionado en la sesión (Donde está el usuario físicamente)
+                    almacen_destino = getattr(request, 'almacen_activo', None)
+                    
+                    # Prioridad 2: Si está en Vista Global, intentamos devolverlo al Principal por defecto
+                    if not almacen_destino:
+                        almacen_destino = Almacen.objects.filter(es_principal=True).first()
+
                     activo.estado = 'DISPONIBLE'
                     activo.trabajador_asignado = None
+                    activo.ubicacion = almacen_destino # <--- EL ACTIVO SE MUEVA A DONDE SE DEVUELVE
                     activo.save()
                     
                     # 3. AUTOMATIZACIÓN KARDEX: Generar Reingreso de Stock
                     # Si el activo está vinculado a un material, devolvemos 1 unidad al almacén.
-                    if activo.material:
-                        # Determinar almacén destino (Idealmente el mismo donde se originó, o el principal)
-                        almacen_destino = None
-                        if activo.ingreso_origen and activo.ingreso_origen.almacen_destino:
-                            almacen_destino = activo.ingreso_origen.almacen_destino
-                        else:
-                            # Fallback: Buscar almacén principal del proyecto
-                            almacen_destino = Almacen.objects.filter(es_principal=True).first()
-                        
-                        if almacen_destino:
+                    if activo.material and almacen_destino:
                             # Crear Movimiento de Devolución
                             mov = Movimiento.objects.create(
-                                proyecto=almacen_destino.proyecto,
+                                proyecto=almacen_destino.proyecto, # Asumimos que el almacén tiene proyecto vinculado
                                 tipo='DEVOLUCION_OBRA',
                                 almacen_destino=almacen_destino,
                                 fecha=timezone.now(),
                                 creado_por=request.user,
-                                observacion=f"Reingreso automático por devolución de activo: {activo.codigo}",
+                                observacion=f"Reingreso por devolución de activo: {activo.codigo} en {almacen_destino.nombre}",
                                 nota_ingreso=f"NI-DEV-{activo.codigo[:8]}" # Código temporal o autogenerado
                             )
                             
@@ -186,7 +186,7 @@ def devolver_activo(request, pk):
                             # Confirmar para afectar stock
                             KardexService.confirmar_movimiento(mov.id)
                 
-                messages.success(request, f'Activo {activo.codigo} devuelto y stock reingresado al almacén.')
+                messages.success(request, f'Activo {activo.codigo} devuelto exitosamente en {almacen_destino.nombre}.')
                 return redirect('activo_list')
             except Exception as e:
                 messages.error(request, f'Error al devolver: {e}')

@@ -75,6 +75,16 @@ class MovimientoForm(forms.ModelForm):
         else:
             self.fields['trabajador'].queryset = Trabajador.objects.none()
 
+        # BLOQUEO Y OCULTAMIENTO DE ALMACÉN POR CONTEXTO
+        if 'initial' in kwargs:
+            initial = kwargs['initial']
+            # Si ya viene definido el Origen (Contexto Salida), lo ocultamos
+            if initial.get('almacen_origen'):
+                self.fields['almacen_origen'].widget = forms.HiddenInput()
+            # Si ya viene definido el Destino (Contexto Ingreso), lo ocultamos
+            if initial.get('almacen_destino'):
+                self.fields['almacen_destino'].widget = forms.HiddenInput()
+
     def clean(self):
         """Validación cruzada para asegurar que existan los almacenes correctos según el tipo."""
         cleaned_data = super().clean()
@@ -89,6 +99,9 @@ class MovimientoForm(forms.ModelForm):
 
         if tipo in tipos_ingreso and not destino:
             self.add_error('almacen_destino', 'Para registrar este Ingreso/Devolución, es OBLIGATORIO seleccionar el Almacén Destino.')
+
+        if tipo == 'TRANSFERENCIA_SALIDA' and not destino:
+            self.add_error('almacen_destino', 'Para una Transferencia de Salida, debes seleccionar el Almacén Destino (Ej: Lima).')
 
         if (tipo in tipos_salida or tipo == 'SALIDA_EPP') and not origen:
             self.add_error('almacen_origen', 'Para registrar esta Salida, es OBLIGATORIO seleccionar el Almacén Origen.')
@@ -125,8 +138,9 @@ class DetalleMovimientoForm(forms.ModelForm):
             'activo': forms.Select(attrs={'class': 'form-select form-select-sm campo-activo-salida'}),
         }
     
-    def __init__(self, *args, tipo_accion=None, **kwargs):
+    def __init__(self, *args, tipo_accion=None, almacen_id=None, **kwargs):
         self.tipo_accion = tipo_accion # Guardamos el tipo para usarlo en clean()
+        self.almacen_id = almacen_id   # Guardamos el almacén para filtrar
         super().__init__(*args, **kwargs)
         # Hacemos que el costo sea opcional (para Salidas o cuando no se tiene el dato)
         self.fields['costo_unitario'].required = False
@@ -134,6 +148,11 @@ class DetalleMovimientoForm(forms.ModelForm):
         # Filtramos los activos disponibles para el selector
         # Solo mostramos activos DISPONIBLES y que NO pertenezcan a un Kit (los kits se asignan en bloque)
         qs_activos = Activo.objects.filter(estado='DISPONIBLE', kit__isnull=True)
+        
+        # NUEVO: Si hay un almacén definido, filtramos solo los activos que están ahí
+        if self.almacen_id:
+            qs_activos = qs_activos.filter(ubicacion_id=self.almacen_id)
+            
         if self.instance.pk and self.instance.activo:
             # Si estamos editando, incluimos el activo actual aunque ya no esté disponible (porque lo tiene esta línea)
             qs_activos = qs_activos | Activo.objects.filter(id=self.instance.activo.id)
@@ -202,6 +221,13 @@ class DetalleMovimientoForm(forms.ModelForm):
             if not activo:
                 self.add_error('activo', "Para la salida de un Activo Fijo, debes seleccionar el equipo específico (Serie/Código).")
             # Nota: La cantidad se valida en el frontend para que sea 1
+            
+            # NUEVO: Validación de Ubicación (Anti-Teletransportación)
+            # Verificamos que el activo seleccionado realmente esté en el almacén de origen
+            origen_id = self.almacen_id or self.data.get('almacen_origen')
+            if activo and origen_id:
+                if str(activo.ubicacion_id) != str(origen_id):
+                    self.add_error('activo', f"El activo {activo.codigo} se encuentra en '{activo.ubicacion}', no en el almacén seleccionado.")
         
         return cleaned_data
 

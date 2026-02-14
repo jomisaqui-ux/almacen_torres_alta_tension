@@ -50,6 +50,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.logistica.middleware.AlmacenContextMiddleware',
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -66,6 +67,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'apps.core.context_processors.empresa_config',
+                'apps.logistica.context_processors.contexto_almacen',
             ],
         },
     },

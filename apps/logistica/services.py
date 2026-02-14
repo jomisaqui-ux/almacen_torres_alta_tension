@@ -43,6 +43,13 @@ class KardexService:
                 # NUEVO: Si es Activo Fijo, creamos las fichas individuales
                 KardexService._procesar_creacion_activos(movimiento, detalle)
                 
+                # NUEVO: Si es un Activo existente ingresando (Transferencia/Devolución), actualizamos su ubicación
+                if detalle.activo:
+                    detalle.activo.ubicacion = movimiento.almacen_destino
+                    detalle.activo.estado = 'DISPONIBLE'
+                    detalle.activo.trabajador_asignado = None
+                    detalle.activo.save()
+
                 # NUEVA LÓGICA: Conciliación de Ingreso (Manual o FIFO)
                 KardexService._conciliar_ingreso_detalle(movimiento, detalle)
             
@@ -153,6 +160,7 @@ class KardexService:
                     valor_compra=detalle.costo_unitario,
                     ingreso_origen=movimiento, # Vinculamos al movimiento origen
                     material=detalle.material, # Vinculamos al catálogo para stock
+                    ubicacion=movimiento.almacen_destino, # Asignamos ubicación inicial
                     # No asignamos kit ni trabajador todavía
                 )
 
@@ -260,16 +268,26 @@ class KardexService:
             if detalle.activo.estado != 'DISPONIBLE':
                 raise ValidationError(f"El activo {detalle.activo.codigo} ya no está disponible (Estado: {detalle.activo.estado}).")
             
-            detalle.activo.estado = 'ASIGNADO'
-            detalle.activo.trabajador_asignado = movimiento.trabajador
+            if movimiento.tipo == 'TRANSFERENCIA_SALIDA':
+                # Si es transferencia, el activo se mueve al almacén destino y queda DISPONIBLE allá
+                detalle.activo.ubicacion = movimiento.almacen_destino
+                detalle.activo.estado = 'DISPONIBLE'
+                detalle.activo.trabajador_asignado = None
+            else:
+                # Si es salida a obra/consumo, sale del almacén (ubicacion=None) y se asigna al trabajador
+                detalle.activo.ubicacion = None
+                detalle.activo.estado = 'ASIGNADO'
+                detalle.activo.trabajador_asignado = movimiento.trabajador
+            
             detalle.activo.save()
             
-            # Crear historial de asignación
-            AsignacionActivo.objects.create(
-                activo=detalle.activo,
-                trabajador=movimiento.trabajador,
-                observacion_entrega=f"Salida por Vale {movimiento.nota_ingreso} (Ref: {movimiento.documento_referencia})"
-            )
+            # Crear historial de asignación (Solo si hay trabajador responsable)
+            if movimiento.trabajador:
+                AsignacionActivo.objects.create(
+                    activo=detalle.activo,
+                    trabajador=movimiento.trabajador,
+                    observacion_entrega=f"Salida por Vale {movimiento.nota_ingreso} (Ref: {movimiento.documento_referencia})"
+                )
 
         # F. GESTIÓN DE EPP (Registro Automático en Historial RRHH)
         # Si el material es tipo EPP y hay un trabajador responsable, lo registramos en su historial.
@@ -361,6 +379,7 @@ class KardexService:
                  if detalle.activo:
                      detalle.activo.estado = 'DISPONIBLE'
                      detalle.activo.trabajador_asignado = None
+                     detalle.activo.ubicacion = movimiento.almacen_origen # Regresa al almacén de origen
                      detalle.activo.save()
                      # Eliminamos la asignación generada para limpiar el historial
                      AsignacionActivo.objects.filter(
