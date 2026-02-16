@@ -19,7 +19,10 @@ from .views import(
     api_crear_trabajador,
     api_buscar_trabajador,
     cambiar_almacen_sesion,
-    limpiar_almacen_sesion # <--- Importar nueva vista
+    limpiar_almacen_sesion, # <--- Importar nueva vista
+    exportar_activos_externos_excel,
+    importar_datos_excel,
+    descargar_plantilla_importacion
 )
 
 urlpatterns = [
@@ -36,6 +39,7 @@ urlpatterns = [
     path('requerimientos/<uuid:req_id>/', requerimiento_detail, name='requerimiento_detail'),
     path('requerimientos/cerrar/<uuid:req_id>/', cerrar_requerimiento, name='cerrar_requerimiento'),
     path('inventario/exportar/', exportar_inventario_excel, name='exportar_inventario_excel'),
+    path('exportar/activos-externos/', exportar_activos_externos_excel, name='exportar_activos_externos_excel'),
     path('kardex/exportar/<uuid:almacen_id>/<uuid:material_id>/', exportar_kardex_excel, name='exportar_kardex_excel'),
     path('api/stock/<uuid:almacen_id>/<uuid:material_id>/', api_consultar_stock, name='api_consultar_stock'),
     path('api/trabajador/nuevo/', api_crear_trabajador, name='api_crear_trabajador'),
@@ -43,4 +47,6 @@ urlpatterns = [
     path('config/reset-db/', reset_database, name='reset_database'),
     path('config/cambiar-almacen/<uuid:almacen_id>/', cambiar_almacen_sesion, name='cambiar_almacen_sesion'), # <--- Nueva ruta
     path('config/limpiar-almacen/', limpiar_almacen_sesion, name='limpiar_almacen_sesion'),
+    path('config/importar-datos/', importar_datos_excel, name='importar_datos_excel'),
+    path('config/descargar-plantilla/', descargar_plantilla_importacion, name='descargar_plantilla_importacion'),
 ]

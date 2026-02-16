@@ -37,7 +37,7 @@ class KardexService:
 
             # 2. Lógica según el tipo de movimiento
             # --- GRUPO INGRESOS (Suman Stock) ---
-            if movimiento.tipo in ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA']:
+            if movimiento.tipo in ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA', 'REINGRESO_LIMA']:
                 KardexService._procesar_ingreso(movimiento, detalle, existencia)
                 
                 # NUEVO: Si es Activo Fijo, creamos las fichas individuales
@@ -54,7 +54,7 @@ class KardexService:
                 KardexService._conciliar_ingreso_detalle(movimiento, detalle)
             
             # --- GRUPO SALIDAS (Restan Stock) ---
-            elif movimiento.tipo in ['SALIDA_OBRA', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA', 'SALIDA_EPP']:
+            elif movimiento.tipo in ['SALIDA_OBRA', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA', 'SALIDA_EPP', 'DEVOLUCION_LIMA']:
                 # 1. Identificar Requerimiento (Línea > Cabecera)
                 req_asociado = detalle.requerimiento or movimiento.requerimiento
                 if req_asociado:
@@ -114,6 +114,10 @@ class KardexService:
         basados en las series ingresadas.
         """
         if detalle.material.tipo == 'ACTIVO_FIJO' and movimiento.tipo == 'INGRESO_COMPRA':
+            # Si ya tiene un activo vinculado (Caso Carga Masiva), no intentamos crearlo de nuevo
+            if detalle.activo:
+                return
+
             # 1. Obtener series limpias
             raw_series = detalle.series_temporales or ""
             lista_series = [s.strip() for s in raw_series.split(',') if s.strip()]
@@ -273,9 +277,17 @@ class KardexService:
                 detalle.activo.ubicacion = movimiento.almacen_destino
                 detalle.activo.estado = 'DISPONIBLE'
                 detalle.activo.trabajador_asignado = None
+            elif movimiento.tipo == 'DEVOLUCION_LIMA':
+                # SALIDA EXTERNA: El activo sale de nuestra responsabilidad directa
+                # Ubicación None para que desaparezca de los listados de obra
+                detalle.activo.ubicacion = None 
+                detalle.activo.estado = 'DEVUELTO_EXTERNO'
+                detalle.activo.trabajador_asignado = None
             else:
-                # Si es salida a obra/consumo, sale del almacén (ubicacion=None) y se asigna al trabajador
-                detalle.activo.ubicacion = None
+                # CAMBIO CLAVE: Si es salida a obra, MANTENEMOS la ubicación administrativa (Almacén)
+                # para que no desaparezca del listado del proyecto.
+                # El stock físico (Tabla Stock) ya bajó a 0, eso es suficiente control logístico.
+                detalle.activo.ubicacion = movimiento.almacen_origen 
                 detalle.activo.estado = 'ASIGNADO'
                 detalle.activo.trabajador_asignado = movimiento.trabajador
             
@@ -358,19 +370,19 @@ class KardexService:
         detalles = movimiento.detalles.all()
         
         # 0. Limpieza de Activos Fijos (Si fue un ingreso que generó equipos)
-        if movimiento.tipo == 'INGRESO_COMPRA':
+        if movimiento.tipo == 'INGRESO_COMPRA' and not any(d.activo for d in detalles):
             # Eliminamos los activos que se crearon con este ingreso para no dejar "fantasmas"
             Activo.objects.filter(ingreso_origen=movimiento).delete()
 
         # 1. Revertir Stock, Existencia y Requerimientos (Línea por línea)
         for detalle in detalles:
             # Revertir Ingreso de Requerimiento (Lógica inversa de conciliación)
-            if movimiento.tipo in ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA']:
+            if movimiento.tipo in ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA', 'REINGRESO_LIMA']:
                  KardexService._revertir_ingreso_detalle_requerimiento(movimiento, detalle)
                  KardexService._revertir_ingreso(movimiento, detalle, existencia)
 
             # Revertir Salida de Requerimiento
-            elif movimiento.tipo in ['SALIDA_OBRA', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA', 'SALIDA_EPP']:
+            elif movimiento.tipo in ['SALIDA_OBRA', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA', 'SALIDA_EPP', 'DEVOLUCION_LIMA']:
                  req_asociado = detalle.requerimiento or movimiento.requerimiento
                  if req_asociado:
                      KardexService._revertir_atencion_detalle_requerimiento(detalle, req_asociado)
@@ -431,8 +443,26 @@ class KardexService:
         stock_fisico.cantidad -= detalle.cantidad
         stock_fisico.save()
 
-        # Revertir stock global (No tocamos PMP por complejidad histórica, solo cantidades)
-        existencia.stock_total_proyecto -= detalle.cantidad
+        # Revertir stock global Y RECALCULAR PMP (Corrección Financiera)
+        # Fórmula Inversa: PMP_Nuevo = (ValorTotalActual - ValorAnulado) / StockNuevo
+        if movimiento.proyecto.usa_control_costos:
+            valor_total_actual = existencia.stock_total_proyecto * existencia.costo_promedio
+            valor_anulado = detalle.cantidad * detalle.costo_unitario
+            
+            nuevo_stock_total = existencia.stock_total_proyecto - detalle.cantidad
+            nuevo_valor_total = valor_total_actual - valor_anulado
+            
+            if nuevo_stock_total > 0:
+                # Evitamos valores negativos absurdos por errores de redondeo
+                if nuevo_valor_total < 0: nuevo_valor_total = Decimal(0)
+                existencia.costo_promedio = nuevo_valor_total / nuevo_stock_total
+            else:
+                existencia.costo_promedio = Decimal(0)
+            
+            existencia.stock_total_proyecto = nuevo_stock_total
+        else:
+            existencia.stock_total_proyecto -= detalle.cantidad
+            
         existencia.save()
 
     @staticmethod

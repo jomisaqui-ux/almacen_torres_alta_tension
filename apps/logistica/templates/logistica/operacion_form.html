@@ -338,9 +338,34 @@
         let divTrabajador = $('#id_trabajador').closest('.col-md-4');
         let labelTrabajador = divTrabajador.find('label');
         let divRequerimiento = $('#id_requerimiento').closest('.col-md-4');
+        
+        // NUEVO: Label de Referencia
+        let labelReferencia = $('#id_documento_referencia').closest('.col-md-5').find('label');
 
         // LÓGICA DE VISIBILIDAD
         
+        // 0. CASO ESPECIAL: DEVOLUCION A LIMA (Salida Externa)
+        if (tipoValor === 'DEVOLUCION_LIMA') {
+            divRequerimiento.hide();
+            divOrigen.show(); // Sale de aquí
+            divDestino.hide(); // Va a externo (no seleccionable)
+            divTorre.hide();
+            divTrabajador.hide();
+            
+            // Cambiar etiqueta de referencia
+            labelReferencia.text("N° GUÍA DE REMISIÓN (OBLIGATORIO)");
+            
+            // Ajuste de columnas (Es Salida)
+            $('.col-ingreso').hide();
+            $('.col-salida').show();
+            $('th.col-ingreso').attr('width', '0%');
+            $('th.col-salida').attr('width', '27%');
+            return;
+        } else {
+            // Restaurar etiqueta original
+            labelReferencia.text("N° GUÍA / FACTURA");
+        }
+
         // 1. CASO ESPECIAL: TRANSFERENCIA SALIDA (Prioridad Alta)
         if (tipoValor === 'TRANSFERENCIA_SALIDA') {
             divRequerimiento.hide();

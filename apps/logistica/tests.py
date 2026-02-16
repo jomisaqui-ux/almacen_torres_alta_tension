@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from decimal import Decimal
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 # Importamos modelos del sistema
 from apps.logistica.models import Almacen, Stock, Movimiento, DetalleMovimiento, Requerimiento, DetalleRequerimiento
@@ -9,6 +10,7 @@ from apps.proyectos.models import Proyecto
 from apps.catalogo.models import Material, Categoria
 from apps.rrhh.models import Trabajador
 from apps.logistica.services import KardexService
+from apps.logistica.forms import ImportarDatosForm
 
 class KardexReservaTest(TestCase):
     """
@@ -116,3 +118,19 @@ class KardexReservaTest(TestCase):
             KardexService.confirmar_movimiento(salida_robo.id)
         
         print(f"[TEST] ÉXITO: El sistema bloqueó la salida. Mensaje: {context.exception.message}")
+
+class ImportarDatosFormTest(TestCase):
+    def test_archivo_valido_xlsx(self):
+        """Verifica que el formulario acepte archivos .xlsx"""
+        file_data = SimpleUploadedFile("datos.xlsx", b"contenido_dummy", content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        form = ImportarDatosForm(files={'archivo_excel': file_data})
+        self.assertTrue(form.is_valid())
+
+    def test_archivo_invalido_txt(self):
+        """Verifica que el formulario rechace archivos que no sean .xlsx"""
+        file_data = SimpleUploadedFile("datos.txt", b"contenido_dummy", content_type="text/plain")
+        form = ImportarDatosForm(files={'archivo_excel': file_data})
+        
+        self.assertFalse(form.is_valid())
+        self.assertIn('archivo_excel', form.errors)
+        self.assertEqual(form.errors['archivo_excel'][0], "Formato inválido. Solo se permiten archivos Excel (.xlsx).")

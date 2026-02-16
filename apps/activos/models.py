@@ -26,7 +26,9 @@ class Activo(models.Model):
     ESTADOS = [
         ('DISPONIBLE', 'Disponible'),
         ('ASIGNADO', 'Asignado (En uso)'),
+        ('EN_TRANSITO', 'En Tránsito / Transferencia'),
         ('MANTENIMIENTO', 'En Mantenimiento'),
+        ('DEVUELTO_EXTERNO', 'Devuelto a Sede Central/Externo'),
         ('BAJA', 'Dado de Baja'),
     ]
     

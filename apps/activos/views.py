@@ -27,7 +27,14 @@ class ActivoListView(ListView):
 
         # FILTRO AUTOMÁTICO POR SESIÓN
         if hasattr(self.request, 'almacen_activo') and self.request.almacen_activo:
-            queryset = queryset.filter(ubicacion=self.request.almacen_activo)
+            # Ahora mostramos:
+            # 1. Lo que está físicamente (DISPONIBLE/MANTENIMIENTO)
+            # 2. Lo que salió de aquí a campo (ASIGNADO)
+            # Gracias al cambio en services.py, ambos tienen ubicacion=almacen_activo
+            queryset = queryset.filter(
+                Q(ubicacion=self.request.almacen_activo) |
+                Q(estado='EN_TRANSITO', ubicacion=self.request.almacen_activo)
+            )
 
         if q:
             queryset = queryset.filter(
@@ -154,6 +161,10 @@ def devolver_activo(request, pk):
                     # Prioridad 2: Si está en Vista Global, intentamos devolverlo al Principal por defecto
                     if not almacen_destino:
                         almacen_destino = Almacen.objects.filter(es_principal=True).first()
+                    
+                    # Si no hay almacén destino (ej: devolución externa rara), mantenemos el actual o null
+                    if not almacen_destino:
+                        almacen_destino = activo.ubicacion
 
                     activo.estado = 'DISPONIBLE'
                     activo.trabajador_asignado = None

@@ -4,7 +4,8 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse, JsonResponse
 from django.template.loader import get_template
-from django.db.models import Prefetch, Q, F
+from django.db.models import Prefetch, Q, F, Case, When, Value, DecimalField, Window, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from decimal import Decimal
 from xhtml2pdf import pisa
@@ -18,10 +19,11 @@ from django.urls import reverse
 
 # Importamos modelos y formularios locales
 from .models import Movimiento, DetalleMovimiento, Stock, Almacen, Material, Proyecto, Requerimiento, Existencia, DetalleRequerimiento
-from .forms import MovimientoForm, DetalleMovimientoFormSet, RequerimientoForm, DetalleRequerimientoFormSet
+from .forms import MovimientoForm, DetalleMovimientoFormSet, RequerimientoForm, DetalleRequerimientoFormSet, ImportarDatosForm
 from .services import KardexService
 from apps.rrhh.models import Trabajador
 from apps.activos.models import Activo, AsignacionActivo, Kit
+from apps.catalogo.models import Categoria # Necesario para crear categorías al vuelo
 from apps.core.models import Configuracion
 
 # ==========================================
@@ -185,75 +187,61 @@ def kardex_producto(request, almacen_id, material_id):
     almacen = get_object_or_404(Almacen, id=almacen_id)
     material = get_object_or_404(Material, id=material_id)
 
-    # 1. Obtener Stock Actual (Punto de partida para cálculo inverso)
-    stock_item = Stock.objects.filter(almacen=almacen, material=material).first()
-    saldo_actual = stock_item.cantidad if stock_item else Decimal(0)
-
-    # 2. Obtener movimientos (Del más reciente al más antiguo)
+    # 1. Consulta Optimizada con Window Functions
+    # Calculamos el saldo acumulado y clasificamos E/S directamente en la BD
     movimientos = DetalleMovimiento.objects.filter(
         material=material,
         movimiento__estado='CONFIRMADO'
     ).filter(
         Q(movimiento__almacen_origen=almacen) | 
         Q(movimiento__almacen_destino=almacen)
-    ).select_related('movimiento', 'movimiento__creado_por').order_by('-movimiento__fecha')
+    ).annotate(
+        # Determinar flujo (+/-) respecto al almacén actual
+        flujo_cantidad=Case(
+            When(movimiento__almacen_destino=almacen, then=F('cantidad')), # Es Ingreso (+)
+            When(movimiento__almacen_origen=almacen, then=F('cantidad') * -1), # Es Salida (-)
+            default=Value(0),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        ),
+        # Clasificación visual para el template (0 o valor)
+        cant_entrada=Case(
+            When(movimiento__almacen_destino=almacen, then=F('cantidad')),
+            default=Value(0),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        ),
+        cant_salida=Case(
+            When(movimiento__almacen_origen=almacen, then=F('cantidad')),
+            default=Value(0),
+            output_field=DecimalField(max_digits=12, decimal_places=2)
+        )
+    ).annotate(
+        # Calcular Saldo Acumulado (Running Total) cronológicamente
+        saldo_historico=Window(
+            expression=Sum('flujo_cantidad'),
+            order_by=[F('movimiento__fecha').asc(), F('id').asc()]
+        )
+    ).select_related('movimiento', 'movimiento__creado_por', 'requerimiento').order_by('-movimiento__fecha', '-id')
 
     movimientos_visuales = []
     
-    # 3. Procesamiento en memoria (Cálculo de Saldos y Banderas)
+    # 2. Procesamiento ligero para etiquetas visuales
     for detalle in movimientos:
         mov = detalle.movimiento
         tipo_original = mov.tipo
         
-        # A. Determinar si es Ingreso o Salida PARA ESTE ALMACÉN
-        es_ingreso = False
-        es_salida = False
+        # Ajuste de etiqueta visual para transferencias
         tipo_visual = tipo_original
-        
-        # FIX ROBUSTO: Convertimos a string para asegurar la comparación (UUID vs Str)
-        id_actual = str(almacen.id)
-        id_destino = str(mov.almacen_destino_id) if mov.almacen_destino_id else ''
-        id_origen = str(mov.almacen_origen_id) if mov.almacen_origen_id else ''
+        if detalle.cant_entrada > 0 and 'SALIDA' in tipo_original:
+             tipo_visual = 'TRANSFERENCIA_ENTRADA'
 
-        soy_destino = (id_destino == id_actual)
-        soy_origen = (id_origen == id_actual)
-
-        # Lógica de Transferencias y Ajustes
-        if soy_destino:
-            # Soy el destino -> Es un INGRESO
-            es_ingreso = True
-            if 'SALIDA' in tipo_original:
-                tipo_visual = 'TRANSFERENCIA_ENTRADA' # Corrección de etiqueta
-        elif soy_origen:
-            # Soy el origen -> Es una SALIDA
-            es_salida = True
-        else:
-            # Fallback: Si no soy ni origen ni destino (ej: admin global o error de datos)
-            if 'INGRESO' in tipo_original or 'DEVOLUCION' in tipo_original or 'ENTRADA' in tipo_original:
-                es_ingreso = True
-            elif 'SALIDA' in tipo_original or 'CONSUMO' in tipo_original:
-                es_salida = True
-
-        # B. Asignar atributos al objeto detalle (para usar en el template)
-        detalle.es_ingreso = es_ingreso
-        detalle.es_salida = es_salida
         detalle.tipo_visual = tipo_visual
         
-        # FIX FINAL: Valores numéricos explícitos (Decimal o 0)
-        # Si es ingreso, la salida ES CERO. Si es salida, la entrada ES CERO.
-        detalle.cantidad_entrada = detalle.cantidad if es_ingreso else Decimal(0)
-        detalle.cantidad_salida = detalle.cantidad if es_salida else Decimal(0)
+        # Mapeo de campos anotados a los nombres que espera el template
+        detalle.cantidad_entrada = detalle.cant_entrada
+        detalle.cantidad_salida = detalle.cant_salida
+        detalle.saldo_calculado = detalle.saldo_historico # Usamos el valor calculado por BD
         
-        detalle.saldo_calculado = saldo_actual
-
-        # C. Recalcular saldo para la siguiente iteración (hacia el pasado)
-        # Si fue ingreso, antes tenía MENOS. Si fue salida, antes tenía MÁS.
-        if es_ingreso:
-            saldo_actual -= detalle.cantidad
-        elif es_salida:
-            saldo_actual += detalle.cantidad
-            
-        # D. Determinar etiqueta de Asignación (Para mostrar en tabla)
+        # Lógica de etiqueta de Asignación
         if detalle.es_stock_libre:
             detalle.asignacion_visual = "STOCK LIBRE"
         elif detalle.requerimiento:
@@ -379,7 +367,9 @@ def operacion_almacen(request, tipo_accion, almacen_id):
         if not filtro_almacen_id:
             filtro_almacen_id = request.POST.get('almacen_origen')
             
-        formset = DetalleMovimientoFormSet(request.POST, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
+        # Obtenemos el tipo real del POST para pasarlo al formset (para filtrar activos en REINGRESO_LIMA)
+        tipo_seleccionado = request.POST.get('tipo', tipo_default)
+        formset = DetalleMovimientoFormSet(request.POST, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id, 'tipo_movimiento': tipo_seleccionado})
         if form.is_valid():
             nuevo_mov = form.save(commit=False)
             
@@ -426,7 +416,7 @@ def operacion_almacen(request, tipo_accion, almacen_id):
             nuevo_mov.save()
             form.save_m2m() 
             
-            formset = DetalleMovimientoFormSet(request.POST, instance=nuevo_mov, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
+            formset = DetalleMovimientoFormSet(request.POST, instance=nuevo_mov, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id, 'tipo_movimiento': tipo_seleccionado})
             if formset.is_valid():
                 formset.save()
                 
@@ -447,7 +437,7 @@ def operacion_almacen(request, tipo_accion, almacen_id):
                 messages.error(request, 'Error en los detalles de los materiales.')
     else:
         form = MovimientoForm(initial=initial_data, tipo_accion=tipo_accion)
-        formset = DetalleMovimientoFormSet(form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
+        formset = DetalleMovimientoFormSet(form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id, 'tipo_movimiento': tipo_default})
 
     # =========================================================================
     # 🛡️ FILTRO DINÁMICO DEL DESPLEGABLE
@@ -461,10 +451,11 @@ def operacion_almacen(request, tipo_accion, almacen_id):
             continue
         clave = str(key).upper()
         if tipo_accion == 'ingreso':
-            if 'INGRESO' in clave or 'DEVOLUCION' in clave or 'ENTRADA' in clave:
+            # Excluimos DEVOLUCION_LIMA porque es una salida (aunque diga DEVOLUCION)
+            if ('INGRESO' in clave or 'DEVOLUCION' in clave or 'ENTRADA' in clave) and clave != 'DEVOLUCION_LIMA':
                 choices_filtradas.append((key, label))
         elif tipo_accion == 'salida':
-            if 'SALIDA' in clave or 'CONSUMO' in clave:
+            if 'SALIDA' in clave or 'CONSUMO' in clave or clave == 'DEVOLUCION_LIMA':
                 choices_filtradas.append((key, label))
 
     form.fields['tipo'].choices = choices_filtradas
@@ -524,7 +515,7 @@ def editar_movimiento(request, movimiento_id):
 
     if request.method == 'POST':
         form = MovimientoForm(request.POST, instance=movimiento, tipo_accion=tipo_accion)
-        formset = DetalleMovimientoFormSet(request.POST, instance=movimiento, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
+        formset = DetalleMovimientoFormSet(request.POST, instance=movimiento, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id, 'tipo_movimiento': movimiento.tipo})
         
         if form.is_valid() and formset.is_valid():
             try:
@@ -537,7 +528,7 @@ def editar_movimiento(request, movimiento_id):
                 messages.error(request, f"Error al actualizar: {e}")
     else:
         form = MovimientoForm(instance=movimiento, tipo_accion=tipo_accion)
-        formset = DetalleMovimientoFormSet(instance=movimiento, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id})
+        formset = DetalleMovimientoFormSet(instance=movimiento, form_kwargs={'tipo_accion': tipo_accion, 'almacen_id': filtro_almacen_id, 'tipo_movimiento': movimiento.tipo})
 
     almacen_contexto = movimiento.almacen_origen or movimiento.almacen_destino
 
@@ -903,3 +894,376 @@ def exportar_kardex_excel(request, almacen_id, material_id):
     response['Content-Disposition'] = f'attachment; filename="Kardex_{material.codigo}.xlsx"'
     wb.save(response)
     return response
+
+def exportar_activos_externos_excel(request):
+    """
+    Genera un reporte Excel de los activos que están actualmente en Sede Central (Devueltos).
+    Busca el último movimiento de salida 'DEVOLUCION_LIMA' para obtener la fecha y guía.
+    """
+    # Filtramos activos que ya no están en obra
+    activos_externos = Activo.objects.filter(estado='DEVUELTO_EXTERNO').order_by('codigo')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Activos en Sede Central"
+
+    # Encabezados
+    headers = ["Código", "Activo", "Marca", "Modelo", "Serie", "Fecha Devolución", "Guía Remisión / Ref.", "Usuario Devolvió"]
+    ws.append(headers)
+
+    # Estilo Encabezado (Rojo para diferenciar que son externos)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="C0392B", end_color="C0392B", fill_type="solid") 
+        cell.alignment = Alignment(horizontal="center")
+
+    for activo in activos_externos:
+        # Buscamos el movimiento que causó esta devolución (El último DEVOLUCION_LIMA)
+        ultimo_mov = DetalleMovimiento.objects.filter(
+            activo=activo,
+            movimiento__tipo='DEVOLUCION_LIMA'
+        ).select_related('movimiento', 'movimiento__creado_por').order_by('-movimiento__fecha').first()
+
+        fecha_dev = "S/D"
+        guia = "-"
+        usuario = "-"
+
+        if ultimo_mov:
+            fecha_dev = ultimo_mov.movimiento.fecha.strftime("%d/%m/%Y %H:%M")
+            guia = f"{ultimo_mov.movimiento.nota_ingreso} / {ultimo_mov.movimiento.documento_referencia}"
+            usuario = ultimo_mov.movimiento.creado_por.username
+
+        ws.append([
+            activo.codigo,
+            activo.nombre,
+            activo.marca,
+            activo.modelo,
+            activo.serie,
+            fecha_dev,
+            guia,
+            usuario
+        ])
+
+    # Ajuste visual de columnas
+    ws.column_dimensions['B'].width = 35
+    ws.column_dimensions['F'].width = 20
+    ws.column_dimensions['G'].width = 25
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Activos_SedeCentral_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+    wb.save(response)
+    return response
+
+# ==========================================
+# 8. CARGA MASIVA DE DATOS
+# ==========================================
+
+def descargar_plantilla_importacion(request):
+    """
+    Genera y descarga una plantilla Excel vacía con las cabeceras correctas.
+    """
+    wb = openpyxl.Workbook()
+    
+    # --- HOJA 1: MATERIALES ---
+    ws1 = wb.active
+    ws1.title = "Materiales"
+    headers_mat = ["CODIGO", "DESCRIPCION", "UNIDAD", "CATEGORIA", "TIPO (CONSUMIBLE/ACTIVO_FIJO/EPP)"]
+    ws1.append(headers_mat)
+    # Ejemplo
+    ws1.append(["CEM-001", "CEMENTO SOL TIPO I", "BOL", "ALBAÑILERIA", "CONSUMIBLE"])
+    
+    # Estilo
+    for cell in ws1[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="2980B9", end_color="2980B9", fill_type="solid")
+
+    # --- HOJA 2: ACTIVOS ---
+    ws2 = wb.create_sheet("Activos")
+    headers_act = ["CODIGO_ACTIVO", "SERIE", "NOMBRE", "MARCA", "MODELO", "COD_MATERIAL_CATALOGO", "ALMACEN_UBICACION", "VALOR_COMPRA"]
+    ws2.append(headers_act)
+    # Ejemplo
+    ws2.append(["TAL-001", "SN-998877", "TALADRO PERCUTOR", "HILTI", "TE-30", "TAL-HIL", "Almacén Central", 500.00])
+
+    # Estilo
+    for cell in ws2[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="27AE60", end_color="27AE60", fill_type="solid")
+
+    # --- HOJA 3: STOCK INICIAL ---
+    ws3 = wb.create_sheet("StockInicial")
+    headers_stock = ["CODIGO_MATERIAL", "CANTIDAD", "COSTO_UNITARIO", "ALMACEN_DESTINO"]
+    ws3.append(headers_stock)
+    # Ejemplo
+    ws3.append(["CEM-001", 500, 22.50, "Almacén Central"])
+
+    # Estilo
+    for cell in ws3[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="8E44AD", end_color="8E44AD", fill_type="solid")
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="Plantilla_Carga_Masiva.xlsx"'
+    wb.save(response)
+    return response
+
+def importar_datos_excel(request):
+    """
+    Procesa el archivo Excel subido y crea/actualiza registros.
+    """
+    if not (request.user.is_superuser or request.user.is_staff):
+        messages.error(request, "Acceso denegado. Solo administradores pueden importar datos.")
+        return redirect('dashboard')
+
+    if request.method == 'POST':
+        form = ImportarDatosForm(request.POST, request.FILES)
+        if form.is_valid():
+            excel_file = request.FILES['archivo_excel']
+            try:
+                wb = openpyxl.load_workbook(excel_file, data_only=True)
+                count_mat = 0
+                count_act = 0
+                count_stock = 0
+                errores = []
+                resumen = {}
+                
+                # 1. Importar Materiales
+                if 'Materiales' in wb.sheetnames:
+                    sheet = wb['Materiales']
+                    for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                        try:
+                            row_data = list(row) + [None] * (5 - len(row))
+                            codigo, descripcion, unidad, cat_nombre, tipo = row_data[:5]
+                            
+                            if not codigo: continue
+                            
+                            with transaction.atomic():
+                                categoria = None
+                                if cat_nombre:
+                                    nombre_cat = str(cat_nombre).strip().upper()
+                                    # 1. Buscamos por nombre exacto
+                                    categoria = Categoria.objects.filter(nombre=nombre_cat).first()
+                                    
+                                    if not categoria:
+                                        # 2. Si no existe por nombre, buscamos por CÓDIGO (Inferencia)
+                                        # Si el código ya existe (ej: ACT), asumimos que es la misma categoría
+                                        # y la reutilizamos para evitar duplicados o errores.
+                                        base_code = nombre_cat[:3].upper()
+                                        categoria = Categoria.objects.filter(codigo=base_code).first()
+                                        
+                                        if not categoria:
+                                            # 3. Solo si no existe ni nombre ni código, CREAMOS
+                                            categoria = Categoria.objects.create(nombre=nombre_cat, codigo=base_code)
+                                
+                                Material.objects.update_or_create(
+                                    codigo=str(codigo).strip().upper(),
+                                    defaults={
+                                        'descripcion': str(descripcion).strip().upper() if descripcion else 'SIN DESCRIPCION',
+                                        'unidad_medida': str(unidad).strip().upper() if unidad else 'UND',
+                                        'categoria': categoria,
+                                        'tipo': str(tipo).strip().upper() if tipo else 'CONSUMIBLE',
+                                        'activo': True
+                                    }
+                                )
+                                count_mat += 1
+                        except Exception as e:
+                            errores.append(f"[Materiales] Fila {i} (Código: {row[0] if row else '?'}): {str(e)}")
+
+                # 2. Importar Activos
+                if 'Activos' in wb.sheetnames:
+                    sheet = wb['Activos']
+                    activos_nuevos_por_almacen = {} # Diccionario para agrupar activos nuevos por almacén
+                    for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                        try:
+                            row_data = list(row) + [None] * (8 - len(row))
+                            cod_activo, serie, nombre, marca, modelo, cod_material, nombre_almacen, valor_compra = row_data[:8]
+                            
+                            if not cod_activo: continue
+                            
+                            with transaction.atomic():
+                                material = None
+                                if cod_material:
+                                    material = Material.objects.filter(codigo=str(cod_material).strip().upper()).first()
+                                    if not material:
+                                        raise ValueError(f"Material catálogo '{cod_material}' no existe")
+                                
+                                ubicacion = None
+                                if nombre_almacen:
+                                    ubicacion = Almacen.objects.filter(nombre__icontains=str(nombre_almacen).strip()).first()
+                                    if not ubicacion:
+                                        raise ValueError(f"Almacén '{nombre_almacen}' no encontrado")
+                                
+                                # Parsear Costo (Valor de Compra)
+                                try:
+                                    costo = Decimal(str(valor_compra)) if valor_compra else Decimal(0)
+                                except:
+                                    costo = Decimal(0)
+
+                                activo, created = Activo.objects.update_or_create(
+                                    codigo=str(cod_activo).strip().upper(),
+                                    defaults={
+                                        'serie': str(serie).strip().upper() if serie else '',
+                                        'nombre': str(nombre).strip().upper() if nombre else 'ACTIVO SIN NOMBRE',
+                                        'marca': str(marca).strip().upper() if marca else '',
+                                        'modelo': str(modelo).strip().upper() if modelo else '',
+                                        'material': material,
+                                        'ubicacion': ubicacion,
+                                        'estado': 'DISPONIBLE',
+                                        'valor_compra': costo,
+                                    }
+                                )
+                                count_act += 1
+                                
+                                # --- AUTOMATIZACIÓN DE STOCK ---
+                                # Si el activo es NUEVO y tiene ubicación/material, lo encolamos para crearle stock
+                                if created and material and ubicacion:
+                                    alm_id = ubicacion.id
+                                    if alm_id not in activos_nuevos_por_almacen:
+                                        activos_nuevos_por_almacen[alm_id] = {
+                                            'almacen': ubicacion,
+                                            'items': []
+                                        }
+                                    activos_nuevos_por_almacen[alm_id]['items'].append({
+                                        'activo': activo,
+                                        'material': material,
+                                        'costo': costo
+                                    })
+
+                        except Exception as e:
+                            errores.append(f"[Activos] Fila {i} (Activo: {row[0] if row else '?'}): {str(e)}")
+
+                    # --- PROCESAR STOCK AUTOMÁTICO PARA ACTIVOS NUEVOS ---
+                    for alm_id, data in activos_nuevos_por_almacen.items():
+                        try:
+                            with transaction.atomic():
+                                almacen_obj = data['almacen']
+                                items = data['items']
+                                
+                                # Crear Movimiento de Ajuste (Ingreso)
+                                mov = Movimiento.objects.create(
+                                    proyecto=almacen_obj.proyecto,
+                                    tipo='INGRESO_COMPRA', # Cambiado para generar NI y consistencia
+                                    almacen_destino=almacen_obj,
+                                    fecha=timezone.now(),
+                                    creado_por=request.user,
+                                    documento_referencia='CARGA_MASIVA_ACT',
+                                    observacion='Generación automática de stock por carga masiva de activos',
+                                    estado='BORRADOR'
+                                )
+                                
+                                for item in items:
+                                    # Validar costo para evitar error de Kardex (Requiere > 0)
+                                    costo_final = item['costo']
+                                    if costo_final <= 0:
+                                        costo_final = Decimal('1.00') # Valor nominal por defecto
+
+                                    DetalleMovimiento.objects.create(
+                                        movimiento=mov,
+                                        material=item['material'],
+                                        cantidad=1,
+                                        costo_unitario=costo_final,
+                                        activo=item['activo'],
+                                        es_stock_libre=True
+                                    )
+                                
+                                KardexService.confirmar_movimiento(mov.id)
+                                count_stock += len(items) # Sumamos al contador de stock procesado
+                        except Exception as e:
+                            errores.append(f"[AutoStock] Error generando stock en {data['almacen'].nombre}: {str(e)}")
+
+                # 3. Importar Stock Inicial
+                if 'StockInicial' in wb.sheetnames:
+                    sheet = wb['StockInicial']
+                    batch_movimientos = {}
+                    
+                    # Fase 1: Lectura y Validación
+                    for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                        try:
+                            row_data = list(row) + [None] * (4 - len(row))
+                            cod_mat, cant, costo, nom_almacen = row_data[:4]
+                            
+                            if not cod_mat or not cant or not nom_almacen: continue
+                            
+                            # Validar Material
+                            material = Material.objects.filter(codigo=str(cod_mat).strip().upper()).first()
+                            if not material: 
+                                raise ValueError(f"Material '{cod_mat}' no existe")
+                            
+                            nom_almacen = str(nom_almacen).strip()
+                            if nom_almacen not in batch_movimientos:
+                                batch_movimientos[nom_almacen] = []
+                            
+                            batch_movimientos[nom_almacen].append({
+                                'material': material,
+                                'cantidad': Decimal(str(cant)),
+                                'costo': Decimal(str(costo)) if costo else Decimal(0),
+                                'fila': i
+                            })
+                        except Exception as e:
+                            errores.append(f"[StockInicial] Fila {i}: {str(e)}")
+
+                    # Fase 2: Procesamiento por Lotes (Almacén)
+                    for nombre_almacen, items in batch_movimientos.items():
+                        try:
+                            with transaction.atomic():
+                                almacen = Almacen.objects.filter(nombre__icontains=nombre_almacen).first()
+                                if not almacen: 
+                                    raise ValueError(f"Almacén '{nombre_almacen}' no encontrado en BD")
+                                
+                                mov = Movimiento.objects.create(
+                                    proyecto=almacen.proyecto,
+                                    tipo='INGRESO_COMPRA', # Cambiamos a Ingreso para que genere NI y sea explícito
+                                    almacen_destino=almacen,
+                                    fecha=timezone.now(),
+                                    creado_por=request.user,
+                                    documento_referencia='CARGA_MASIVA',
+                                    observacion='Carga Inicial de Stock desde Excel',
+                                    estado='BORRADOR'
+                                )
+                                
+                                temp_count = 0
+                                for item in items:
+                                    DetalleMovimiento.objects.create(
+                                        movimiento=mov,
+                                        material=item['material'],
+                                        cantidad=item['cantidad'],
+                                        costo_unitario=item['costo'],
+                                        es_stock_libre=True
+                                    )
+                                    temp_count += 1
+                                
+                                KardexService.confirmar_movimiento(mov.id)
+                                count_stock += temp_count
+                        except Exception as e:
+                            filas_afectadas = ", ".join([str(x['fila']) for x in items])
+                            errores.append(f"[StockInicial] Error procesando lote '{nombre_almacen}' (Filas {filas_afectadas}): {str(e)}")
+                
+                resumen = {
+                    'materiales': count_mat,
+                    'activos': count_act,
+                    'stock': count_stock
+                }
+                
+                if errores:
+                    messages.warning(request, f"Carga finalizada con {len(errores)} errores. Revise el reporte abajo.")
+                else:
+                    messages.success(request, f"✅ Carga Exitosa: {count_mat} Materiales, {count_act} Activos y {count_stock} líneas de Stock.")
+                
+                # Renderizamos con el contexto de errores (sin redirect para no perder la lista)
+                context = {
+                    'form': form,
+                    'titulo': 'Carga Masiva de Datos (Catálogo y Activos)',
+                    'errores': errores,
+                    'resumen': resumen
+                }
+                return render(request, 'logistica/importar_datos.html', context)
+
+            except Exception as e:
+                messages.error(request, f"❌ Error al procesar el archivo: {e}")
+    else:
+        form = ImportarDatosForm()
+    
+    context = {
+        'form': form,
+        'titulo': 'Carga Masiva de Datos (Catálogo y Activos)'
+    }
+    return render(request, 'logistica/importar_datos.html', context)

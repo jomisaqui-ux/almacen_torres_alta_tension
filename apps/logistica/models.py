@@ -164,6 +164,8 @@ class Movimiento(models.Model):
         ('TRANSFERENCIA_SALIDA', 'Transferencia (Salida)'),
         ('TRANSFERENCIA_ENTRADA', 'Transferencia (Entrada)'),
         ('DEVOLUCION_OBRA', 'Reingreso por Devolución de Obra'),
+        ('DEVOLUCION_LIMA', 'Devolución a Sede Central (Salida)'),
+        ('REINGRESO_LIMA', 'Reingreso de Sede Central (Entrada)'),
         ('AJUSTE_INVENTARIO', 'Ajuste de Inventario'),
     ]
 

@@ -95,6 +95,7 @@ class MovimientoForm(forms.ModelForm):
         # Definimos qué tipos requieren qué almacén
         tipos_ingreso = ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA']
         tipos_salida = ['SALIDA_OBRA', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA']
+        # DEVOLUCION_LIMA y REINGRESO_LIMA tienen reglas especiales abajo
         # SALIDA_EPP se maneja como salida pero no requiere torre, requiere trabajador
 
         if tipo in tipos_ingreso and not destino:
@@ -105,6 +106,12 @@ class MovimientoForm(forms.ModelForm):
 
         if (tipo in tipos_salida or tipo == 'SALIDA_EPP') and not origen:
             self.add_error('almacen_origen', 'Para registrar esta Salida, es OBLIGATORIO seleccionar el Almacén Origen.')
+            
+        # Validaciones específicas para LIMA
+        if tipo == 'REINGRESO_LIMA' and not destino:
+             self.add_error('almacen_destino', 'Para el Reingreso desde Lima, debes seleccionar el Almacén Destino donde entrará el material.')
+        if tipo == 'DEVOLUCION_LIMA' and not origen:
+             self.add_error('almacen_origen', 'Para devolver a Lima, debes seleccionar de qué Almacén sale.')
             
         if tipo in ['SALIDA_EPP', 'SALIDA_OBRA', 'SALIDA_OFICINA']:
             trabajador = cleaned_data.get('trabajador')
@@ -138,9 +145,10 @@ class DetalleMovimientoForm(forms.ModelForm):
             'activo': forms.Select(attrs={'class': 'form-select form-select-sm campo-activo-salida'}),
         }
     
-    def __init__(self, *args, tipo_accion=None, almacen_id=None, **kwargs):
+    def __init__(self, *args, tipo_accion=None, almacen_id=None, tipo_movimiento=None, **kwargs):
         self.tipo_accion = tipo_accion # Guardamos el tipo para usarlo en clean()
         self.almacen_id = almacen_id   # Guardamos el almacén para filtrar
+        self.tipo_movimiento = tipo_movimiento # Nuevo: Para saber si es REINGRESO_LIMA
         super().__init__(*args, **kwargs)
         # Hacemos que el costo sea opcional (para Salidas o cuando no se tiene el dato)
         self.fields['costo_unitario'].required = False
@@ -152,6 +160,11 @@ class DetalleMovimientoForm(forms.ModelForm):
         # NUEVO: Si hay un almacén definido, filtramos solo los activos que están ahí
         if self.almacen_id:
             qs_activos = qs_activos.filter(ubicacion_id=self.almacen_id)
+            
+        # LÓGICA DE REINGRESO: Si vuelve de Lima, mostramos los que están "DEVUELTO_EXTERNO"
+        if self.tipo_movimiento == 'REINGRESO_LIMA':
+            # Sobreescribimos el queryset para mostrar SOLO los que están fuera
+            qs_activos = Activo.objects.filter(estado='DEVUELTO_EXTERNO')
             
         if self.instance.pk and self.instance.activo:
             # Si estamos editando, incluimos el activo actual aunque ya no esté disponible (porque lo tiene esta línea)
@@ -298,3 +311,20 @@ DetalleRequerimientoFormSet = inlineformset_factory(
     extra=0,
     can_delete=True
 )
+
+# ==========================================
+# 5. UTILITARIOS (CARGA MASIVA)
+# ==========================================
+class ImportarDatosForm(forms.Form):
+    archivo_excel = forms.FileField(
+        label="Seleccionar archivo Excel (.xlsx)",
+        help_text="Asegúrese de usar la plantilla oficial descargada del sistema.",
+        widget=forms.ClearableFileInput(attrs={'class': 'form-control', 'accept': '.xlsx'})
+    )
+
+    def clean_archivo_excel(self):
+        archivo = self.cleaned_data.get('archivo_excel')
+        if archivo:
+            if not archivo.name.endswith('.xlsx'):
+                raise forms.ValidationError("Formato inválido. Solo se permiten archivos Excel (.xlsx).")
+        return archivo

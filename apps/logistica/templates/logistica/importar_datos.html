@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+{% block header %}{{ titulo }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        
+        <!-- TARJETA DE INSTRUCCIONES -->
+        <div class="card mb-4 shadow-sm border-info">
+            <div class="card-header bg-info text-white">
+                <i class="fas fa-info-circle me-2"></i> Instrucciones
+            </div>
+            <div class="card-body">
+                <p>Para realizar una carga masiva exitosa, siga estos pasos:</p>
+                <ol>
+                    <li>Descargue la <strong>Plantilla Oficial</strong> usando el botón de abajo.</li>
+                    <li>Llene la hoja <strong>"Materiales"</strong> con su catálogo (Códigos, Descripción, Unidad).</li>
+                    <li>Llene la hoja <strong>"Activos"</strong> con sus equipos (Series, Marcas, Modelos).</li>
+                    <li>No cambie los nombres de las cabeceras ni de las hojas.</li>
+                    <li>Suba el archivo guardado.</li>
+                </ol>
+                <div class="text-center mt-3">
+                    <a href="{% url 'descargar_plantilla_importacion' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-download me-2"></i> Descargar Plantilla Excel
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESUMEN DE ÉXITO -->
+        {% if resumen %}
+        <div class="card shadow mb-4 border-success">
+            <div class="card-header bg-success text-white">
+                <i class="fas fa-check-circle me-2"></i> Resumen de Procesamiento
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <h3 class="text-success">{{ resumen.materiales }}</h3>
+                        <small class="text-muted">Materiales</small>
+                    </div>
+                    <div class="col-4">
+                        <h3 class="text-success">{{ resumen.activos }}</h3>
+                        <small class="text-muted">Activos</small>
+                    </div>
+                    <div class="col-4">
+                        <h3 class="text-success">{{ resumen.stock }}</h3>
+                        <small class="text-muted">Líneas Stock</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- REPORTE DE ERRORES -->
+        {% if errores %}
+        <div class="card shadow mb-4 border-danger">
+            <div class="card-header bg-danger text-white">
+                <i class="fas fa-exclamation-circle me-2"></i> Reporte de Errores ({{ errores|length }})
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for error in errores %}
+                    <li class="list-group-item text-danger small">
+                        <i class="fas fa-times me-2"></i> {{ error }}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- FORMULARIO DE CARGA -->
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-file-upload me-2"></i> Subir Archivo
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <!-- BARRA DE PROGRESO (Oculta por defecto) -->
+                    <div id="progress-div" class="mb-4" style="display:none;">
+                        <label id="progress-label" class="form-label text-muted small">Subiendo archivo...</label>
+                        <div class="progress" style="height: 25px;">
+                            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 0%;">0%</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        {{ form.as_p }}
+                    </div>
+
+                    <div class="alert alert-warning small">
+                        <i class="fas fa-exclamation-triangle me-1"></i> 
+                        <strong>Nota:</strong> Si un código ya existe, sus datos (descripción, categoría) serán actualizados.
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-cloud-upload-alt me-2"></i> Procesar Carga Masiva
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.querySelector('form').addEventListener('submit', function(e) {
+        // Solo interceptamos si hay un archivo seleccionado
+        var fileInput = document.querySelector('input[type="file"]');
+        if (!fileInput || !fileInput.files.length) return;
+
+        e.preventDefault(); // Evitamos el envío tradicional para usar AJAX
+        
+        var formData = new FormData(this);
+        var xhr = new XMLHttpRequest();
+        
+        var progressDiv = document.getElementById('progress-div');
+        var progressBar = document.getElementById('progress-bar');
+        var progressLabel = document.getElementById('progress-label');
+        var btnSubmit = document.querySelector('button[type="submit"]');
+
+        // Mostrar barra y bloquear botón
+        progressDiv.style.display = 'block';
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Subiendo...';
+
+        var startTime = new Date().getTime();
+
+        // Evento de Progreso (Subida)
+        xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+                var percent = Math.round((e.loaded / e.total) * 100);
+                
+                // Calcular velocidad (MB/s)
+                var duration = (new Date().getTime() - startTime) / 1000;
+                if (duration > 0) {
+                    var bps = e.loaded / duration;
+                    var mbps = (bps / (1024 * 1024)).toFixed(2);
+                    if (percent < 100) progressLabel.innerText = "Subiendo archivo... (" + mbps + " MB/s)";
+                }
+
+                progressBar.style.width = percent + '%';
+                progressBar.innerText = percent + '%';
+                
+                if (percent === 100) {
+                    progressLabel.innerText = "Procesando datos en el servidor (Esto puede tardar unos segundos)...";
+                    progressBar.classList.remove('bg-success');
+                    progressBar.classList.add('bg-info'); // Cambiar a azul para indicar procesamiento
+                    progressBar.innerText = "Procesando...";
+                }
+            }
+        };
+
+        // Al terminar (Éxito o Error del servidor)
+        xhr.onload = function() {
+            // Reemplazamos la página actual con la respuesta del servidor (que traerá los mensajes de éxito/error)
+            document.open();
+            document.write(xhr.responseText);
+            document.close();
+        };
+
+        xhr.onerror = function() {
+            alert("Error de conexión al subir el archivo.");
+            window.location.reload();
+        };
+
+        xhr.open('POST', '', true);
+        xhr.send(formData);
+    });
+</script>
+{% endblock %}
