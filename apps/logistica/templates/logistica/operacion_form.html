@@ -167,9 +167,9 @@
                         <th width="25%">Material</th>
                         <th width="8%">Cant.</th>
                         <th width="10%">Costo (S/.)</th>
+                        <th width="27%" class="col-salida" style="display:none;">Activo (Serie)</th>
                         <th width="12%" class="col-ingreso">Marca</th>
                         <th width="15%" class="col-ingreso">Series</th>
-                        <th width="27%" class="col-salida" style="display:none;">Activo (Serie)</th>
                         <th width="20%">Asignar a Req. / Stock Libre</th>
                         <th width="10%"></th>
                     </tr>
@@ -194,9 +194,9 @@
                         </td>
                         <td>{{ form.cantidad }}</td>
                         <td>{{ form.costo_unitario }}</td>
+                        <td class="col-salida" style="display:none;">{{ form.activo }}</td>
                         <td class="col-ingreso">{{ form.marca }}</td>
                         <td class="col-ingreso">{{ form.series_temporales }}</td>
-                        <td class="col-salida" style="display:none;">{{ form.activo }}</td>
                         <td>{{ form.seleccion_requerimiento }}</td>
                         <td class="text-center align-middle">
                             <div class="d-none">{{ form.DELETE }}</div> <!-- Checkbox oculto de Django -->
@@ -284,9 +284,9 @@
             </td>
             <td>{{ formset.empty_form.cantidad }}</td>
             <td>{{ formset.empty_form.costo_unitario }}</td>
+            <td class="col-salida" style="display:none;">{{ formset.empty_form.activo }}</td>
             <td class="col-ingreso">{{ formset.empty_form.marca }}</td>
             <td class="col-ingreso">{{ formset.empty_form.series_temporales }}</td>
-            <td class="col-salida" style="display:none;">{{ formset.empty_form.activo }}</td>
             <td>{{ formset.empty_form.seleccion_requerimiento }}</td>
             <td class="text-center align-middle">
                 <div class="d-none">{{ formset.empty_form.DELETE }}</div>
@@ -413,12 +413,20 @@
             }
             
             // Ajuste de columnas de tabla
-            $('.col-ingreso').show();
-            $('.col-salida').hide();
-            // Ajustar anchos si es necesario
-            $('th.col-ingreso').first().attr('width', '12%');
-            $('th.col-ingreso').last().attr('width', '15%');
-            $('th.col-salida').attr('width', '0%');
+            if (tipoValor === 'DEVOLUCION_OBRA' || tipoValor === 'REINGRESO_LIMA') {
+                // EXCEPCIÓN: En devolución/reingreso usamos el SELECT de activos (col-salida)
+                $('.col-ingreso').hide();
+                $('.col-salida').show();
+                $('th.col-ingreso').attr('width', '0%');
+                $('th.col-salida').attr('width', '27%');
+            } else {
+                $('.col-ingreso').show();
+                $('.col-salida').hide();
+                // Ajustar anchos si es necesario
+                $('th.col-ingreso').first().attr('width', '12%');
+                $('th.col-ingreso').last().attr('width', '15%');
+                $('th.col-salida').attr('width', '0%');
+            }
 
         } else if (tipoTexto.includes('SALIDA') || tipoTexto.includes('CONSUMO')) {
             // === ES UNA SALIDA ===
@@ -535,24 +543,75 @@
         let inputsIngreso = row.find('.campo-activo-fijo'); // Marca y Series
         let inputSalida = row.find('.campo-activo-salida'); // Select de Activo
         let esActivoFijo = (materialId && TIPOS_MATERIALES[materialId] === 'ACTIVO_FIJO');
+        let tipoOperacion = $('#id_tipo').val(); 
         
         if (esActivoFijo) {
-            if (TIPO_ACCION.includes('INGRESO')) {
-                inputsIngreso.show();
-                inputSalida.hide();
-            } else {
-                // ES SALIDA
+            // Definimos explícitamente qué operaciones usan el SELECT de activos (Existentes)
+            const OPERACIONES_CON_SELECT = [
+                'SALIDA_OBRA', 
+                'SALIDA_OFICINA', 
+                'TRANSFERENCIA_SALIDA', 
+                'DEVOLUCION_LIMA', 
+                'DEVOLUCION_OBRA', 
+                'REINGRESO_LIMA'
+            ];
+
+            // Si la operación está en la lista, mostramos el SELECT, si no, MANUAL (Ingreso Compra)
+            if (OPERACIONES_CON_SELECT.includes(tipoOperacion)) {
                 inputsIngreso.hide();
                 inputSalida.show();
                 // Forzar cantidad a 1 si es salida de activo fijo
                 let cantInput = row.find('input[name$="-cantidad"]');
                 if (cantInput.val() == '' || cantInput.val() > 1) cantInput.val(1);
+            } else {
+                // INGRESO_COMPRA, TRANSFERENCIA_ENTRADA -> Manual
+                inputsIngreso.show();
+                inputSalida.hide();
             }
         } else {
             inputsIngreso.hide();
             inputSalida.hide();
             inputSalida.val(''); // Limpiar selección
         }
+    }
+
+    // Variable global para recordar las opciones de activos y aplicarlas a nuevas filas
+    let CACHE_OPCIONES_ACTIVOS = '<option value="">---------</option>';
+
+    // --- NUEVO: RECARGAR OPCIONES DE ACTIVOS (AJAX) ---
+    function recargarOpcionesActivos() {
+        let tipoOperacion = $('#id_tipo').val();
+        
+        // Lógica robusta: Si hay un almacén fijo en la URL, lo usamos.
+        // Si no (Vista Global), tomamos el que el usuario seleccionó en el combo de Origen.
+        let almacenId = ALMACEN_ID_URL;
+        if (!almacenId && (tipoOperacion.includes('SALIDA') || tipoOperacion.includes('TRANSFERENCIA'))) {
+            almacenId = $('#id_almacen_origen').val();
+        }
+        // Para devoluciones a Lima, también importa de dónde sale
+        if (!almacenId && tipoOperacion === 'DEVOLUCION_LIMA') {
+             almacenId = $('#id_almacen_origen').val();
+        }
+        
+        // Llamada a la API
+        $.get("{% url 'api_listar_activos' %}", { tipo_operacion: tipoOperacion, almacen_id: almacenId }, function(data) {
+            let options = '<option value="">---------</option>';
+            if (data.results) {
+                data.results.forEach(function(item) {
+                    options += `<option value="${item.id}">${item.text}</option>`;
+                });
+            }
+            
+            // Guardamos en caché para las futuras filas que se agreguen
+            CACHE_OPCIONES_ACTIVOS = options;
+            
+            // Actualizar TODOS los selects de activo en la tabla (incluso los ocultos)
+            $('select[name$="-activo"]').each(function() {
+                let valActual = $(this).val();
+                $(this).html(options);
+                $(this).val(valActual); // Intentar mantener selección si existe
+            });
+        });
     }
 
     // --- SINCRONIZACIÓN CABECERA -> DETALLES ---
@@ -587,7 +646,24 @@
     $(document).ready(function() {
         // 1. Iniciar lógica visual
         toggleCampos();
-        $('#id_tipo').change(function() { toggleCampos(); });
+        // Cargar opciones iniciales (por si entramos directo a una edición o devolución)
+        recargarOpcionesActivos();
+
+        $('#id_tipo').change(function() { 
+            toggleCampos();
+            
+            // Si cambiamos a Devolución, recargamos los activos para mostrar los ASIGNADOS
+            // Si cambiamos a Salida, recargamos para mostrar los DISPONIBLES
+            recargarOpcionesActivos();
+            
+            // Actualizar visibilidad de filas existentes
+            $('#form-list tr.item-row').each(function() { actualizarVisibilidadActivos($(this)); });
+        });
+        
+        // Si el usuario cambia el Almacén de Origen (en vista global), recargamos los activos de ese almacén
+        $('#id_almacen_origen').change(function() {
+            recargarOpcionesActivos();
+        });
 
         // Foco inicial en Tipo de Operación al cargar
         $('#id_tipo').focus();
@@ -756,6 +832,9 @@
             }
             // -------------------------------------------------------
 
+            // INYECTAR OPCIONES DE ACTIVOS (Desde la caché)
+            $newRow.find('select[name$="-activo"]').html(CACHE_OPCIONES_ACTIVOS);
+
             $('#form-list').append($newRow);
             totalFormsInput.val(formCount + 1);
             
@@ -892,6 +971,8 @@
 
             // D. Validación de Series para Activos Fijos (NUEVO)
             let errorSeries = false;
+            let tipoOperacion = $('#id_tipo').val(); // Obtenemos el tipo real seleccionado
+
             $('#form-list tr.item-row').each(function() {
                 // Solo validamos filas visibles y que no estén marcadas para borrar
                 if ($(this).is(':visible') && !$(this).find('input[name$="-DELETE"]').is(':checked')) {
@@ -901,6 +982,12 @@
                     
                     // Si es Activo Fijo y estamos en un Ingreso
                     if (materialId && TIPOS_MATERIALES[materialId] === 'ACTIVO_FIJO' && TIPO_ACCION.includes('INGRESO')) {
+                        
+                        // EXCEPCIÓN: Si es Devolución de Obra o Reingreso, NO validamos series manuales (se usa el Select)
+                        if (tipoOperacion === 'DEVOLUCION_OBRA' || tipoOperacion === 'REINGRESO_LIMA') {
+                            return true; // Continue (Saltar validación de series manuales)
+                        }
+
                         let textoSeries = seriesInput.val() || "";
                         // Convertir texto "A, B, C" en array ["A", "B", "C"]
                         let listaSeries = textoSeries.split(',').filter(s => s.trim() !== '');
@@ -996,7 +1083,15 @@
                 // B. Si estamos en COSTO
                 else if (name && name.includes('-costo_unitario')) {
                     e.preventDefault();
-                    // Verificar si es Activo Fijo (Ingreso) -> Ir a MARCA si está visible
+                    
+                    // 1. Si es Salida de Activo Fijo (Select Activo visible)
+                    let selectActivo = $row.find('select[name$="-activo"]');
+                    if (selectActivo.closest('td').css('display') !== 'none' && selectActivo.is(':visible')) {
+                        selectActivo.focus();
+                        return;
+                    }
+
+                    // 2. Si es Ingreso de Activo Fijo (Marca visible)
                     let inputMarca = $row.find('input[name$="-marca"]');
                     if (inputMarca.is(':visible')) {
                         inputMarca.focus();
@@ -1032,6 +1127,12 @@
                     } else {
                         $row.find('select[name$="-seleccion_requerimiento"]').focus();
                     }
+                }
+
+                // F. Si estamos en ACTIVO (Select Salida) -> Ir a SELECT REQ
+                else if (name && name.includes('-activo')) {
+                    e.preventDefault();
+                    $row.find('select[name$="-seleccion_requerimiento"]').focus();
                 }
 
                 // E. Si estamos en SELECT -> Ir a Siguiente Fila o Buscador

@@ -10,10 +10,10 @@ Contexto del proyecto
 ESTADO ACTUAL DEL DESARROLLO (Checklist):
 =========================================
 ✅ 1. Requerimientos: Implementado (Modelos, Vistas, Barra de Progreso).
-✅ 2. Logística/Kardex: Finalizado (Flujo completo, Validaciones estrictas, Kardex corregido).
+✅ 2. Logística/Kardex: Finalizado (Flujo completo, Validaciones estrictas, UX Grilla mejorada).
 ✅ 3. Activos Fijos: Implementado (Equipos, Herramientas, Kits, Asignaciones y Devoluciones).
 ✅ 4. RRHH: Implementado (Trabajadores, Tallas, Historial EPPs, Constancia de Libre Adeudo).
-✅ 5. Configuración y Reportes: Implementado (Branding dinámico, PDFs oficiales, Exportación Excel).
+✅ 5. Configuración y Reportes: Implementado (Branding, PDFs A4/A5, Series en Vales, Exportación Excel).
 ➡️ 6. PRÓXIMO PASO: Pruebas Integrales y Preparación para Despliegue.
 
 Módulos del sistema.

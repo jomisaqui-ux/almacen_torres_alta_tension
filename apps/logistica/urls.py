@@ -18,6 +18,7 @@ from .views import(
     exportar_kardex_excel,
     api_crear_trabajador,
     api_buscar_trabajador,
+    api_listar_activos,
     cambiar_almacen_sesion,
     limpiar_almacen_sesion, # <--- Importar nueva vista
     exportar_activos_externos_excel,
@@ -44,6 +45,7 @@ urlpatterns = [
     path('api/stock/<uuid:almacen_id>/<uuid:material_id>/', api_consultar_stock, name='api_consultar_stock'),
     path('api/trabajador/nuevo/', api_crear_trabajador, name='api_crear_trabajador'),
     path('api/trabajador/buscar/', api_buscar_trabajador, name='api_buscar_trabajador'),
+    path('api/activos/listar/', api_listar_activos, name='api_listar_activos'),
     path('config/reset-db/', reset_database, name='reset_database'),
     path('config/cambiar-almacen/<uuid:almacen_id>/', cambiar_almacen_sesion, name='cambiar_almacen_sesion'), # <--- Nueva ruta
     path('config/limpiar-almacen/', limpiar_almacen_sesion, name='limpiar_almacen_sesion'),

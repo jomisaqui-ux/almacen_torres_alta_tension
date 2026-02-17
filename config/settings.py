@@ -15,7 +15,7 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG', default=False)
 
-ALLOWED_HOSTS = ["*", ".dev.tunnels.ms"] # "*", ".dev.tunnels.ms"
+ALLOWED_HOSTS = ["*", ".dev.tunnels.ms", "localhost", "127.0.0.1"] # "*", ".dev.tunnels.ms"
 
 
 # Application definition

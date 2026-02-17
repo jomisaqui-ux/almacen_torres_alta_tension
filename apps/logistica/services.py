@@ -49,6 +49,16 @@ class KardexService:
                     detalle.activo.estado = 'DISPONIBLE'
                     detalle.activo.trabajador_asignado = None
                     detalle.activo.save()
+                    
+                    # NUEVO: Cerrar la asignación histórica (RRHH/Activos)
+                    # Buscamos si hay una asignación abierta para este activo y la cerramos
+                    AsignacionActivo.objects.filter(
+                        activo=detalle.activo,
+                        fecha_devolucion__isnull=True
+                    ).update(
+                        fecha_devolucion=movimiento.fecha,
+                        observacion_devolucion=f"Devuelto en {movimiento.nota_ingreso}"
+                    )
 
                 # NUEVA LÓGICA: Conciliación de Ingreso (Manual o FIFO)
                 KardexService._conciliar_ingreso_detalle(movimiento, detalle)

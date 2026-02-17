@@ -72,6 +72,13 @@ def generar_vale_pdf(request, movimiento_id):
     if not movimiento.requerimiento and any(d.requerimiento for d in detalles):
         mostrar_columna_req = True
 
+    # Configuración de Formato de Página (A4 vs A5)
+    formato = request.GET.get('formato', 'A4')
+    if formato == 'A5':
+        page_size = 'A5 portrait' # A5 Vertical (Reducido)
+    else:
+        page_size = 'A4 portrait'
+
     template_path = 'logistica/vale_pdf.html'
     context = {
         'movimiento': movimiento,
@@ -80,6 +87,7 @@ def generar_vale_pdf(request, movimiento_id):
         'qr_code': qr_img,
         'titulo': f"VALE DE {movimiento.get_tipo_display().upper()}",
         'mostrar_columna_req': mostrar_columna_req,
+        'page_size': page_size,
     }
 
     response = HttpResponse(content_type='application/pdf')
@@ -667,6 +675,33 @@ def api_buscar_trabajador(request):
     ).values('id', 'nombres', 'apellidos', 'dni')[:20] # Limitamos a 20 resultados
     
     return JsonResponse({'results': list(qs)})
+
+def api_listar_activos(request):
+    """
+    API para llenar dinámicamente el select de activos según la operación.
+    """
+    tipo_operacion = request.GET.get('tipo_operacion', '')
+    almacen_id = request.GET.get('almacen_id', '')
+    
+    qs = Activo.objects.all()
+    
+    # Excluir activos que pertenecen a un kit (se asignan por kit, no individualmente)
+    qs = qs.filter(kit__isnull=True)
+    
+    if tipo_operacion == 'DEVOLUCION_OBRA':
+        # Mostrar activos que están en obra (ASIGNADO)
+        qs = qs.filter(estado='ASIGNADO')
+    elif tipo_operacion == 'REINGRESO_LIMA':
+        # Mostrar activos que están fuera (DEVUELTO_EXTERNO)
+        qs = qs.filter(estado='DEVUELTO_EXTERNO')
+    else:
+        # Por defecto (Salidas, Transferencias), mostrar DISPONIBLES en el almacén actual
+        qs = qs.filter(estado='DISPONIBLE')
+        if almacen_id and almacen_id != '00000000-0000-0000-0000-000000000000':
+            qs = qs.filter(ubicacion_id=almacen_id)
+            
+    data = [{'id': a.id, 'text': f"{a.codigo} - {a.serie} | {a.nombre}"} for a in qs]
+    return JsonResponse({'results': data})
 
 # ==========================================
 # 6. ZONA DE PELIGRO (ADMINISTRACIÓN)

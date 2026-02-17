@@ -165,6 +165,10 @@ class DetalleMovimientoForm(forms.ModelForm):
         if self.tipo_movimiento == 'REINGRESO_LIMA':
             # Sobreescribimos el queryset para mostrar SOLO los que están fuera
             qs_activos = Activo.objects.filter(estado='DEVUELTO_EXTERNO')
+        
+        # NUEVO: Si es devolución de obra, mostramos los que están ASIGNADOS (en campo)
+        elif self.tipo_movimiento == 'DEVOLUCION_OBRA':
+            qs_activos = Activo.objects.filter(estado='ASIGNADO')
             
         if self.instance.pk and self.instance.activo:
             # Si estamos editando, incluimos el activo actual aunque ya no esté disponible (porque lo tiene esta línea)
@@ -190,8 +194,12 @@ class DetalleMovimientoForm(forms.ModelForm):
         for req in qs:
             choices.append((str(req.id), str(req)))
             
-        self.fields['seleccion_requerimiento'].choices = choices
-        self.fields['seleccion_requerimiento'].widget.attrs.update({'class': 'form-select form-select-sm'})
+        # Definimos el campo dinámicamente para asegurar que quede al final del formulario (DOM)
+        self.fields['seleccion_requerimiento'] = forms.ChoiceField(
+            choices=choices, 
+            required=False, 
+            widget=forms.Select(attrs={'class': 'form-select form-select-sm'})
+        )
         
         # Establecer valor inicial basado en la instancia (Edición)
         if self.instance.pk:
@@ -212,6 +220,10 @@ class DetalleMovimientoForm(forms.ModelForm):
             elif 'form-control' not in existing_class:
                 field.widget.attrs['class'] = existing_class + ' form-control'
 
+        # Aseguramos el orden lógico de los campos para la navegación (Tab Index)
+        # AJUSTE: Movemos 'activo' antes de los campos de texto para evitar saltos erróneos cuando estos se ocultan en Salidas
+        self.order_fields(['material', 'cantidad', 'costo_unitario', 'activo', 'marca', 'series_temporales', 'seleccion_requerimiento'])
+
     def clean(self):
         cleaned_data = super().clean()
         material = cleaned_data.get('material')
@@ -220,13 +232,20 @@ class DetalleMovimientoForm(forms.ModelForm):
         
         # Validar solo en Ingresos y si es Activo Fijo
         if self.tipo_accion == 'ingreso' and material and material.tipo == 'ACTIVO_FIJO':
-            if cantidad:
-                # Convertimos series a lista, eliminando espacios vacíos
-                lista_series = [s.strip() for s in (series or "").split(',') if s.strip()]
-                cantidad_entera = int(cantidad)
-                
-                if len(lista_series) != cantidad_entera:
-                    self.add_error('series_temporales', f"Debes ingresar {cantidad_entera} series separadas por comas. (Ingresaste {len(lista_series)})")
+            # CASO ESPECIAL: Devolución de Obra (Es un ingreso, pero seleccionamos un activo existente)
+            if self.tipo_movimiento == 'DEVOLUCION_OBRA':
+                activo = cleaned_data.get('activo')
+                if not activo:
+                    self.add_error('activo', "Para una Devolución de Obra, debes seleccionar el equipo que retorna.")
+            else:
+                # CASO NORMAL: Compra o Ingreso Nuevo (Series manuales)
+                if cantidad:
+                    # Convertimos series a lista, eliminando espacios vacíos
+                    lista_series = [s.strip() for s in (series or "").split(',') if s.strip()]
+                    cantidad_entera = int(cantidad)
+                    
+                    if len(lista_series) != cantidad_entera:
+                        self.add_error('series_temporales', f"Debes ingresar {cantidad_entera} series separadas por comas. (Ingresaste {len(lista_series)})")
         
         # Validar solo en Salidas y si es Activo Fijo
         if self.tipo_accion == 'salida' and material and material.tipo == 'ACTIVO_FIJO':

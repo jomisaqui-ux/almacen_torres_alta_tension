@@ -102,19 +102,43 @@ def asignar_activo(request, pk):
             
             try:
                 with transaction.atomic():
-                    # 1. Actualizar Activo
-                    activo.estado = 'ASIGNADO'
-                    activo.trabajador_asignado = trabajador
-                    activo.save()
-                    
-                    # 2. Crear Historial
-                    AsignacionActivo.objects.create(
-                        activo=activo,
-                        trabajador=trabajador,
-                        observacion_entrega=observacion
-                    )
+                    # INTENTO AUTOMÁTICO: Generar Movimiento de Salida (Documento VS)
+                    # Usamos SALIDA_OFICINA para que no exija Torre, pero vinculamos al trabajador.
+                    if activo.material and activo.ubicacion:
+                        mov = Movimiento.objects.create(
+                            proyecto=activo.ubicacion.proyecto,
+                            tipo='SALIDA_OFICINA', # Salida interna (Asignación)
+                            almacen_origen=activo.ubicacion,
+                            trabajador=trabajador,
+                            fecha=timezone.now(),
+                            creado_por=request.user,
+                            observacion=f"Asignación directa de activo: {observacion}",
+                            documento_referencia=f"ASIG-{activo.codigo}"
+                        )
+                        
+                        DetalleMovimiento.objects.create(
+                            movimiento=mov,
+                            material=activo.material,
+                            cantidad=1,
+                            costo_unitario=activo.valor_compra,
+                            activo=activo # El servicio se encargará de cambiar estado a ASIGNADO
+                        )
+                        
+                        KardexService.confirmar_movimiento(mov.id)
+                        messages.success(request, f'Activo asignado y Vale de Salida {mov.nota_ingreso} generado.')
+                    else:
+                        # FALLBACK MANUAL (Si el activo no tiene material vinculado o ubicación)
+                        activo.estado = 'ASIGNADO'
+                        activo.trabajador_asignado = trabajador
+                        activo.save()
+                        
+                        AsignacionActivo.objects.create(
+                            activo=activo,
+                            trabajador=trabajador,
+                            observacion_entrega=observacion
+                        )
+                        messages.warning(request, f'Activo asignado manualmente (Sin Vale de Salida porque falta material/ubicación).')
                 
-                messages.success(request, f'Activo {activo.codigo} asignado correctamente a {trabajador}.')
                 return redirect('activo_list')
             except Exception as e:
                 messages.error(request, f'Error al asignar: {e}')
@@ -142,47 +166,29 @@ def devolver_activo(request, pk):
             
             try:
                 with transaction.atomic():
-                    # 1. Buscar la asignación abierta (sin fecha devolución)
-                    asignacion = AsignacionActivo.objects.filter(
-                        activo=activo,
-                        fecha_devolucion__isnull=True
-                    ).last()
-                    
-                    if asignacion:
-                        asignacion.fecha_devolucion = timezone.now()
-                        asignacion.observacion_devolucion = observacion
-                        asignacion.save()
-                    
-                    # 2. Liberar Activo
-                    # --- NUEVA LÓGICA: DETERMINAR UBICACIÓN DE RETORNO (ROAMING) ---
-                    # Prioridad 1: Almacén seleccionado en la sesión (Donde está el usuario físicamente)
+                    # DETERMINAR ALMACÉN DE RETORNO
                     almacen_destino = getattr(request, 'almacen_activo', None)
-                    
-                    # Prioridad 2: Si está en Vista Global, intentamos devolverlo al Principal por defecto
                     if not almacen_destino:
                         almacen_destino = Almacen.objects.filter(es_principal=True).first()
-                    
-                    # Si no hay almacén destino (ej: devolución externa rara), mantenemos el actual o null
                     if not almacen_destino:
                         almacen_destino = activo.ubicacion
 
-                    activo.estado = 'DISPONIBLE'
-                    activo.trabajador_asignado = None
-                    activo.ubicacion = almacen_destino # <--- EL ACTIVO SE MUEVA A DONDE SE DEVUELVE
-                    activo.save()
-                    
-                    # 3. AUTOMATIZACIÓN KARDEX: Generar Reingreso de Stock
-                    # Si el activo está vinculado a un material, devolvemos 1 unidad al almacén.
+                    # INTENTO AUTOMÁTICO: Generar Movimiento de Devolución (Documento NI)
                     if activo.material and almacen_destino:
+                            # Generar correlativo único para evitar errores
+                            correlativo = Movimiento.objects.filter(tipo='DEVOLUCION_OBRA').count() + 1
+                            nota_ingreso = f"NI-DEV-{str(correlativo).zfill(5)}"
+
                             # Crear Movimiento de Devolución
                             mov = Movimiento.objects.create(
-                                proyecto=almacen_destino.proyecto, # Asumimos que el almacén tiene proyecto vinculado
+                                proyecto=almacen_destino.proyecto,
                                 tipo='DEVOLUCION_OBRA',
                                 almacen_destino=almacen_destino,
                                 fecha=timezone.now(),
                                 creado_por=request.user,
-                                observacion=f"Reingreso por devolución de activo: {activo.codigo} en {almacen_destino.nombre}",
-                                nota_ingreso=f"NI-DEV-{activo.codigo[:8]}" # Código temporal o autogenerado
+                                observacion=f"Devolución: {observacion}",
+                                nota_ingreso=nota_ingreso,
+                                documento_referencia=f"RET-{activo.codigo}"
                             )
                             
                             # Crear Detalle
@@ -191,13 +197,26 @@ def devolver_activo(request, pk):
                                 material=activo.material,
                                 cantidad=1,
                                 costo_unitario=activo.valor_compra,
-                                activo=activo # Vinculamos para trazabilidad
+                                activo=activo # El servicio se encargará de liberar activo y cerrar asignación
                             )
                             
                             # Confirmar para afectar stock
                             KardexService.confirmar_movimiento(mov.id)
-                
-                messages.success(request, f'Activo {activo.codigo} devuelto exitosamente en {almacen_destino.nombre}.')
+                            messages.success(request, f'Activo devuelto y Vale {mov.nota_ingreso} generado en {almacen_destino.nombre}.')
+                    else:
+                        # FALLBACK MANUAL (Si falla lo anterior)
+                        asignacion = AsignacionActivo.objects.filter(activo=activo, fecha_devolucion__isnull=True).last()
+                        if asignacion:
+                            asignacion.fecha_devolucion = timezone.now()
+                            asignacion.observacion_devolucion = observacion
+                            asignacion.save()
+                        
+                        activo.estado = 'DISPONIBLE'
+                        activo.trabajador_asignado = None
+                        activo.ubicacion = almacen_destino
+                        activo.save()
+                        messages.warning(request, f'Activo devuelto manualmente (Sin Vale NI porque falta material/almacén).')
+
                 return redirect('activo_list')
             except Exception as e:
                 messages.error(request, f'Error al devolver: {e}')
