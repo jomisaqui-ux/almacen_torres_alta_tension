@@ -174,6 +174,8 @@
             <td class="value">
                 {% if movimiento.proveedor %}
                     {{ movimiento.proveedor.razon_social }}
+                {% elif movimiento.tipo == 'DEVOLUCION_OBRA' and movimiento.trabajador %}
+                    {{ movimiento.trabajador }} (Devolución)
                 {% else %}
                     {{ movimiento.almacen_origen.nombre|default:"EXTERNO" }}
                 {% endif %}
@@ -287,6 +289,11 @@
                 {% if 'SALIDA' in movimiento.tipo or 'CONSUMO' in movimiento.tipo %}
                     {# En Salida: Entrega el Almacén #}
                     <small>Almacén / Logística</small>
+                {% elif movimiento.tipo == 'DEVOLUCION_OBRA' %}
+                    {# En Devolución: Entrega el Trabajador #}
+                    <small>{{ movimiento.trabajador|default:"Trabajador" }}</small>
+                    <br><br>
+                    <small>DNI: {{ movimiento.trabajador.dni|default:"__________________" }}</small>
                 {% else %}
                     {# En Ingreso: Entrega el Proveedor #}
                     <small>{{ movimiento.proveedor.razon_social|default:"Proveedor / Transportista" }}</small>

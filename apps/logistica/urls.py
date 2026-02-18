@@ -14,6 +14,7 @@ from .views import(
     requerimiento_create,
     reset_database,
     cerrar_requerimiento,
+    generar_requerimiento_pdf, # <--- Importar vista
     exportar_inventario_excel,
     exportar_kardex_excel,
     api_crear_trabajador,
@@ -22,6 +23,11 @@ from .views import(
     cambiar_almacen_sesion,
     limpiar_almacen_sesion, # <--- Importar nueva vista
     exportar_activos_externos_excel,
+    reporte_transacciones, # <--- Importar nueva vista
+    reporte_consumo_torre, # <--- Nuevos reportes
+    reporte_backlog,
+    reporte_epp_trabajador,
+    reporte_reposicion,
     importar_datos_excel,
     descargar_plantilla_importacion
 )
@@ -39,9 +45,15 @@ urlpatterns = [
     path('requerimientos/nuevo/', requerimiento_create, name='requerimiento_create'),
     path('requerimientos/<uuid:req_id>/', requerimiento_detail, name='requerimiento_detail'),
     path('requerimientos/cerrar/<uuid:req_id>/', cerrar_requerimiento, name='cerrar_requerimiento'),
+    path('requerimientos/pdf/<uuid:req_id>/', generar_requerimiento_pdf, name='generar_requerimiento_pdf'), # <--- Nueva ruta
     path('inventario/exportar/', exportar_inventario_excel, name='exportar_inventario_excel'),
     path('exportar/activos-externos/', exportar_activos_externos_excel, name='exportar_activos_externos_excel'),
     path('kardex/exportar/<uuid:almacen_id>/<uuid:material_id>/', exportar_kardex_excel, name='exportar_kardex_excel'),
+    path('reportes/transacciones/', reporte_transacciones, name='reporte_transacciones'), # <--- Nueva ruta
+    path('reportes/consumo-torre/', reporte_consumo_torre, name='reporte_consumo_torre'),
+    path('reportes/backlog/', reporte_backlog, name='reporte_backlog'),
+    path('reportes/epp-trabajador/', reporte_epp_trabajador, name='reporte_epp_trabajador'),
+    path('reportes/reposicion/', reporte_reposicion, name='reporte_reposicion'),
     path('api/stock/<uuid:almacen_id>/<uuid:material_id>/', api_consultar_stock, name='api_consultar_stock'),
     path('api/trabajador/nuevo/', api_crear_trabajador, name='api_crear_trabajador'),
     path('api/trabajador/buscar/', api_buscar_trabajador, name='api_buscar_trabajador'),

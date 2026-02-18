@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Alertas de Stock{% endblock %}
+{% block header %}Materiales Críticos (Reposición){% endblock %}
+
+{% block content %}
+<div class="alert alert-danger d-flex align-items-center" role="alert">
+    <i class="fas fa-exclamation-triangle fa-2x me-3"></i>
+    <div>
+        <strong>Acción Requerida:</strong> Los siguientes materiales están por debajo de su stock mínimo y requieren compra inmediata.
+    </div>
+    <a href="?export=excel" class="btn btn-danger ms-auto"><i class="fas fa-file-excel me-2"></i> Descargar Lista</a>
+</div>
+
+<div class="card shadow mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Almacén</th>
+                        <th>Código</th>
+                        <th>Material</th>
+                        <th>Categoría</th>
+                        <th class="text-center">Stock Actual</th>
+                        <th class="text-center">Stock Mínimo</th>
+                        <th class="text-center">Déficit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in criticos %}
+                    <tr>
+                        <td>{{ c.almacen.nombre }}</td>
+                        <td class="text-primary fw-bold">{{ c.material.codigo }}</td>
+                        <td>{{ c.material.descripcion }}</td>
+                        <td>{{ c.material.categoria.nombre }}</td>
+                        <td class="text-center fw-bold text-danger">{{ c.cantidad|floatformat:2 }}</td>
+                        <td class="text-center">{{ c.cantidad_minima|floatformat:2 }}</td>
+                        <td class="text-center bg-danger text-white fw-bold">
+                            {{ c.deficit|floatformat:2 }}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center text-success py-5"><i class="fas fa-check-circle fa-3x mb-3"></i><br>Todo en orden. No hay alertas de stock crítico.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

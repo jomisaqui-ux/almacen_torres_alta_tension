@@ -121,10 +121,10 @@ class MovimientoForm(forms.ModelForm):
         if tipo == 'DEVOLUCION_LIMA' and not origen:
              self.add_error('almacen_origen', 'Para devolver a Lima, debes seleccionar de qué Almacén sale.')
             
-        if tipo in ['SALIDA_EPP', 'SALIDA_OBRA', 'SALIDA_OFICINA']:
+        if tipo in ['SALIDA_EPP', 'SALIDA_OBRA', 'SALIDA_OFICINA', 'DEVOLUCION_OBRA']:
             trabajador = cleaned_data.get('trabajador')
             if not trabajador:
-                self.add_error('trabajador', 'Es OBLIGATORIO seleccionar al Trabajador (Solicitante/Beneficiario).')
+                self.add_error('trabajador', 'Es OBLIGATORIO seleccionar al Trabajador (Solicitante/Beneficiario/Devolvente).')
             elif not trabajador.activo:
                 self.add_error('trabajador', f'El trabajador {trabajador} figura como INACTIVO (Cesado). No se le puede entregar materiales.')
 

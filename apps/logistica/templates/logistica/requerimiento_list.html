@@ -21,7 +21,7 @@
                         <th>Solicitante</th>
                         <th>Prioridad</th>
                         <th>Estado</th>
-                        <th>Acciones</th>
+                        <th class="text-center">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -50,10 +50,15 @@
                                 <span class="badge bg-secondary">Cancelado</span>
                             {% endif %}
                         </td>
-                        <td>
-                            <a href="{% url 'requerimiento_detail' req.id %}" class="btn btn-sm btn-info" title="Ver Progreso">
-                                <i class="fas fa-eye"></i> Ver Detalle
-                            </a>
+                        <td class="text-center">
+                            <div class="btn-group">
+                                <a href="{% url 'generar_requerimiento_pdf' req.id %}" target="_blank" class="btn btn-sm btn-secondary" title="Imprimir PDF">
+                                    <i class="fas fa-print"></i>
+                                </a>
+                                <a href="{% url 'requerimiento_detail' req.id %}" class="btn btn-sm btn-info" title="Ver Progreso">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}

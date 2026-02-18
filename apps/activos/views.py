@@ -6,6 +6,9 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.http import HttpResponse # <--- Importar
+import openpyxl # <--- Importar
+from openpyxl.styles import Font, Alignment, PatternFill # <--- Importar
 from .models import Activo, AsignacionActivo, Kit
 from .forms import ActivoForm, AsignacionForm, DevolucionForm, KitForm, AsignarKitForm
 from apps.logistica.models import Movimiento, DetalleMovimiento, Almacen
@@ -183,7 +186,8 @@ def devolver_activo(request, pk):
                                 fecha=timezone.now(),
                                 creado_por=request.user,
                                 observacion=f"Devolución: {observacion}",
-                                documento_referencia=f"RET-{activo.codigo}"
+                                documento_referencia=f"RET-{activo.codigo}",
+                                trabajador=activo.trabajador_asignado # Guardamos quién devuelve
                             )
                             
                             # Crear Detalle
@@ -340,3 +344,55 @@ def administrar_kit(request, pk):
         'disponibles': Activo.objects.filter(kit__isnull=True, estado='DISPONIBLE').order_by('codigo')
     }
     return render(request, 'activos/kit_componentes.html', context)
+
+def exportar_activos_excel(request):
+    """
+    Genera el Reporte Maestro de Activos Fijos (Sábana de Equipos).
+    """
+    # Obtenemos todos los activos con sus relaciones clave
+    activos = Activo.objects.select_related('ubicacion', 'trabajador_asignado', 'material').order_by('codigo')
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Maestro de Activos"
+
+    # Encabezados
+    headers = ["Código", "Serie", "Descripción", "Marca", "Modelo", "Estado", "Ubicación Actual", "Trabajador Asignado", "Valor Compra"]
+    ws.append(headers)
+
+    # Estilo Encabezado
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="2980B9", end_color="2980B9", fill_type="solid")
+        cell.alignment = Alignment(horizontal="center")
+
+    for activo in activos:
+        ubicacion_str = "-"
+        if activo.ubicacion:
+            ubicacion_str = activo.ubicacion.nombre
+        
+        trabajador_str = "-"
+        if activo.trabajador_asignado:
+            trabajador_str = f"{activo.trabajador_asignado.nombres} {activo.trabajador_asignado.apellidos}"
+
+        ws.append([
+            activo.codigo,
+            activo.serie,
+            activo.nombre,
+            activo.marca,
+            activo.modelo,
+            activo.get_estado_display(),
+            ubicacion_str,
+            trabajador_str,
+            activo.valor_compra
+        ])
+
+    # Ajuste de anchos
+    ws.column_dimensions['C'].width = 40 # Nombre
+    ws.column_dimensions['G'].width = 25 # Ubicación
+    ws.column_dimensions['H'].width = 30 # Trabajador
+
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="Maestro_Activos_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+    wb.save(response)
+    return response

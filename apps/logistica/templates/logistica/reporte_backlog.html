@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Backlog de Materiales{% endblock %}
+{% block header %}Pendientes de Atención (Backlog){% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-end mb-3">
+    <a href="?export=excel" class="btn btn-success"><i class="fas fa-file-excel me-2"></i> Exportar a Excel</a>
+</div>
+
+<div class="card shadow mb-4 border-left-danger">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+                <thead class="bg-danger text-white">
+                    <tr>
+                        <th>Requerimiento</th>
+                        <th>Fecha Sol.</th>
+                        <th>Solicitante</th>
+                        <th>Material</th>
+                        <th class="text-center">Und</th>
+                        <th class="text-center">Solicitado</th>
+                        <th class="text-center">Atendido</th>
+                        <th class="text-center">PENDIENTE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pendientes %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'requerimiento_detail' p.requerimiento.id %}" class="fw-bold text-danger text-decoration-none">
+                                {{ p.requerimiento.codigo }}
+                            </a>
+                        </td>
+                        <td>{{ p.requerimiento.fecha_solicitud|date:"d/m/Y" }}</td>
+                        <td>{{ p.requerimiento.solicitante }}</td>
+                        <td>
+                            <strong>{{ p.material.codigo }}</strong> - {{ p.material.descripcion }}
+                        </td>
+                        <td class="text-center">{{ p.material.unidad_medida }}</td>
+                        <td class="text-center">{{ p.cantidad_solicitada|floatformat:2 }}</td>
+                        <td class="text-center text-success">{{ p.cantidad_atendida|floatformat:2 }}</td>
+                        <td class="text-center fw-bold text-danger bg-danger bg-opacity-10">{{ p.pendiente|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="text-center text-muted py-4">¡Excelente! No hay materiales pendientes de entrega.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

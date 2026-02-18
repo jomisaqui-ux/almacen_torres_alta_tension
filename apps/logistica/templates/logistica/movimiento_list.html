@@ -149,6 +149,8 @@
                                     {{ mov.almacen_origen.nombre }}
                                 {% elif mov.proveedor %}
                                     {{ mov.proveedor.razon_social }}
+                                {% elif mov.trabajador %}
+                                    {{ mov.trabajador.nombres }} {{ mov.trabajador.apellidos }}
                                 {% else %}
                                     Proveedor Ext.
                                 {% endif %}
@@ -163,6 +165,8 @@
                                     </span>
                                 {% elif mov.almacen_destino %}
                                     <span class="texto-limitado">{{ mov.almacen_destino.nombre }}</span>
+                                {% elif mov.trabajador %}
+                                    <span class="texto-limitado">{{ mov.trabajador.nombres }} {{ mov.trabajador.apellidos }}</span>
                                 {% else %}
                                     --
                                 {% endif %}

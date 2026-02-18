@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Reporte Detallado{% endblock %}
+{% block header %}Reporte de Gestión de Materiales{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header py-3 bg-primary text-white d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold"><i class="fas fa-chart-line me-2"></i>Filtros de Reporte</h6>
+    </div>
+    <div class="card-body bg-light">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label fw-bold small text-muted">Tipo Reporte</label>
+                <select name="tipo_reporte" class="form-select" onchange="this.form.submit()">
+                    <option value="ingreso" {% if tipo_reporte == 'ingreso' %}selected{% endif %}>Ingresos (Compras)</option>
+                    <option value="salida" {% if tipo_reporte == 'salida' %}selected{% endif %}>Salidas (Consumos)</option>
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <label class="form-label fw-bold small text-muted">Desde</label>
+                <input type="date" name="fecha_inicio" class="form-control" value="{{ fecha_inicio }}">
+            </div>
+            
+            <div class="col-md-2">
+                <label class="form-label fw-bold small text-muted">Hasta</label>
+                <input type="date" name="fecha_fin" class="form-control" value="{{ fecha_fin }}">
+            </div>
+
+            {% if tipo_reporte == 'ingreso' %}
+            <div class="col-md-3">
+                <label class="form-label fw-bold small text-muted">Proveedor</label>
+                <select name="proveedor" class="form-select">
+                    <option value="">-- Todos --</option>
+                    {% for p in proveedores %}
+                        <option value="{{ p.id }}" {% if proveedor_id == p.id|stringformat:"s" %}selected{% endif %}>{{ p.razon_social }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-filter"></i> Filtrar</button>
+                
+                <!-- Botón Exportar (Mantiene los filtros actuales) -->
+                <button type="submit" name="export" value="excel" class="btn btn-success w-100"><i class="fas fa-file-excel"></i> Excel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0" width="100%" cellspacing="0">
+                <thead class="table-dark small">
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Documento</th>
+                        {% if tipo_reporte == 'ingreso' %}
+                            <th>Proveedor / Origen</th>
+                            <th>Ref. Externa</th>
+                        {% else %}
+                            <th>Destino</th>
+                        {% endif %}
+                        <th>Código</th>
+                        <th>Material</th>
+                        <th class="text-center">Und</th>
+                        <th class="text-end">Cantidad</th>
+                        <th class="text-end">Costo Unit.</th>
+                        <th class="text-end">Total</th>
+                    </tr>
+                </thead>
+                <tbody class="small">
+                    {% for d in detalles %}
+                    <tr>
+                        <td>{{ d.movimiento.fecha|date:"d/m/Y" }}</td>
+                        <td>
+                            <a href="{% url 'generar_vale_pdf' d.movimiento.id %}" target="_blank" class="text-decoration-none fw-bold">
+                                {{ d.movimiento.nota_ingreso|default:"-" }}
+                            </a>
+                        </td>
+                        
+                        {% if tipo_reporte == 'ingreso' %}
+                            <td>
+                                {% if d.movimiento.proveedor %}
+                                    {{ d.movimiento.proveedor.razon_social|truncatechars:25 }}
+                                {% elif d.movimiento.almacen_origen %}
+                                    {{ d.movimiento.almacen_origen.nombre }}
+                                {% else %}
+                                    Obra/Trabajador
+                                {% endif %}
+                            </td>
+                            <td>{{ d.movimiento.documento_referencia|default:"-" }}</td>
+                        {% else %}
+                            <td>
+                                {% if d.movimiento.torre_destino %}
+                                    Torre {{ d.movimiento.torre_destino }}
+                                {% elif d.movimiento.trabajador %}
+                                    {{ d.movimiento.trabajador }}
+                                {% elif d.movimiento.almacen_destino %}
+                                    {{ d.movimiento.almacen_destino.nombre }}
+                                {% elif d.movimiento.tipo == 'DEVOLUCION_LIMA' %}
+                                    Sede Central
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        {% endif %}
+
+                        <td class="text-primary">{{ d.material.codigo }}</td>
+                        <td>{{ d.material.descripcion|truncatechars:40 }}</td>
+                        <td class="text-center">{{ d.material.unidad_medida }}</td>
+                        <td class="text-end fw-bold">{{ d.cantidad|floatformat:2 }}</td>
+                        <td class="text-end">{{ d.costo_unitario|floatformat:2 }}</td>
+                        <td class="text-end fw-bold">{{ d.subtotal|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center py-4 text-muted">No se encontraron registros con los filtros seleccionados.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

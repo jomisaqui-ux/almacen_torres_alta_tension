@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import ActivoListView, ActivoUpdateView, ActivoDetailView, asignar_activo, devolver_activo, KitListView, KitCreateView, asignar_kit, administrar_kit
+from .views import ActivoListView, ActivoUpdateView, ActivoDetailView, asignar_activo, devolver_activo, KitListView, KitCreateView, asignar_kit, administrar_kit, exportar_activos_excel
 
 urlpatterns = [
     path('', ActivoListView.as_view(), name='activo_list'),
@@ -7,6 +7,7 @@ urlpatterns = [
     path('detalle/<uuid:pk>/', ActivoDetailView.as_view(), name='activo_detail'),
     path('asignar/<uuid:pk>/', asignar_activo, name='activo_asignar'),
     path('devolver/<uuid:pk>/', devolver_activo, name='activo_devolver'),
+    path('exportar/excel/', exportar_activos_excel, name='exportar_activos_excel'), # <--- Nueva ruta
     
     # URLs de Kits
     path('kits/', KitListView.as_view(), name='kit_list'),

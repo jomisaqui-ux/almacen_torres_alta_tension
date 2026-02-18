@@ -23,8 +23,9 @@ from .forms import MovimientoForm, DetalleMovimientoFormSet, RequerimientoForm, 
 from .services import KardexService
 from apps.rrhh.models import Trabajador
 from apps.activos.models import Activo, AsignacionActivo, Kit
-from apps.catalogo.models import Categoria # Necesario para crear categorías al vuelo
+from apps.catalogo.models import Categoria, Proveedor # Necesario para crear categorías al vuelo y filtros
 from apps.core.models import Configuracion
+from apps.proyectos.models import Torre # Necesario para reporte de consumo
 
 # ==========================================
 # 1. REPORTES Y PDF
@@ -104,6 +105,45 @@ def generar_vale_pdf(request, movimiento_id):
        return HttpResponse('Error al generar PDF <pre>' + html + '</pre>')
     return response
 
+def generar_requerimiento_pdf(request, req_id):
+    """
+    Genera el PDF oficial de un Requerimiento de Materiales.
+    """
+    requerimiento = get_object_or_404(Requerimiento, id=req_id)
+    config = Configuracion.objects.first()
+    
+    # Generar Código QR
+    qr_data = f"REQ: {requerimiento.codigo}\nFECHA: {requerimiento.fecha_solicitud}\nSOLICITA: {requerimiento.solicitante}"
+    qr = qrcode.make(qr_data)
+    buffer = BytesIO()
+    qr.save(buffer, format="PNG")
+    qr_img = base64.b64encode(buffer.getvalue()).decode()
+
+    # Formato de página
+    page_size = 'A4 portrait' # Estándar para requerimientos
+
+    template_path = 'logistica/requerimiento_pdf.html'
+    context = {
+        'req': requerimiento,
+        'detalles': requerimiento.detalles.select_related('material').all(),
+        'config': config,
+        'qr_code': qr_img,
+        'titulo': "REQUERIMIENTO DE MATERIALES",
+        'page_size': page_size,
+    }
+
+    response = HttpResponse(content_type='application/pdf')
+    filename = f"Requerimiento_{requerimiento.codigo}.pdf"
+    response['Content-Disposition'] = f'inline; filename="{filename}"'
+
+    template = get_template(template_path)
+    html = template.render(context)
+
+    pisa_status = pisa.CreatePDF(html, dest=response)
+    if pisa_status.err:
+       return HttpResponse('Error al generar PDF <pre>' + html + '</pre>')
+    return response
+
 # ==========================================
 # 2. VISTAS DE INVENTARIO Y LISTADOS
 # ==========================================
@@ -166,7 +206,9 @@ def movimiento_list(request):
         'almacen_origen', 
         'almacen_destino', 
         'torre_destino',
-        'proyecto'
+        'proyecto',
+        'proveedor',   # Optimización para evitar N+1 queries
+        'trabajador'   # Optimización para evitar N+1 queries
     ).order_by('-fecha')
 
     # FILTRO POR CONTEXTO DE ALMACÉN
@@ -751,7 +793,7 @@ def exportar_inventario_excel(request):
     Genera un Excel con el stock actual filtrado por la búsqueda.
     """
     query = request.GET.get('q')
-    stocks_filter = Stock.objects.select_related('material', 'material__categoria', 'almacen')
+    stocks_filter = Stock.objects.select_related('material', 'material__categoria', 'almacen', 'almacen__proyecto')
 
     if query:
         stocks_filter = stocks_filter.filter(
@@ -764,7 +806,7 @@ def exportar_inventario_excel(request):
     ws.title = "Inventario Físico"
 
     # Encabezados
-    headers = ["Almacén", "Código", "Material", "Categoría", "Unidad", "Stock Actual", "Mínimo", "Ubicación"]
+    headers = ["Almacén", "Código", "Material", "Categoría", "Unidad", "Stock Actual", "Costo Promedio (S/.)", "Valor Total (S/.)", "Mínimo", "Ubicación"]
     ws.append(headers)
     
     # Estilo Encabezado
@@ -773,8 +815,23 @@ def exportar_inventario_excel(request):
         cell.fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
         cell.alignment = Alignment(horizontal="center")
 
+    # Optimización: Cargar existencias (costos) en memoria para evitar N+1 queries
+    # Mapa: {(proyecto_id, material_id): costo_promedio}
+    proyectos_ids = set(s.almacen.proyecto_id for s in stocks_filter)
+    materiales_ids = set(s.material_id for s in stocks_filter)
+    
+    existencias = Existencia.objects.filter(
+        proyecto_id__in=proyectos_ids, 
+        material_id__in=materiales_ids
+    ).values('proyecto_id', 'material_id', 'costo_promedio')
+    
+    costos_map = {(e['proyecto_id'], e['material_id']): e['costo_promedio'] for e in existencias}
+
     # Datos
     for stock in stocks_filter:
+        pmp = costos_map.get((stock.almacen.proyecto_id, stock.material_id), Decimal(0))
+        valor_total = stock.cantidad * pmp
+
         ws.append([
             stock.almacen.nombre,
             stock.material.codigo,
@@ -782,6 +839,8 @@ def exportar_inventario_excel(request):
             stock.material.categoria.nombre if stock.material.categoria else '-',
             stock.material.unidad_medida,
             stock.cantidad,
+            pmp,
+            valor_total,
             stock.cantidad_minima,
             stock.ubicacion_pasillo
         ])
@@ -949,6 +1008,286 @@ def exportar_activos_externos_excel(request):
     response['Content-Disposition'] = f'attachment; filename="Activos_SedeCentral_{timezone.now().strftime("%Y%m%d")}.xlsx"'
     wb.save(response)
     return response
+
+# ==========================================
+# 7.5 REPORTE DETALLADO DE TRANSACCIONES
+# ==========================================
+
+def reporte_transacciones(request):
+    """
+    Reporte detallado de movimientos (Sábana de datos) para gestión y contabilidad.
+    Permite filtrar por fecha, tipo (Ingreso/Salida) y proveedor.
+    """
+    fecha_inicio = request.GET.get('fecha_inicio')
+    fecha_fin = request.GET.get('fecha_fin')
+    tipo_reporte = request.GET.get('tipo_reporte', 'ingreso')
+    proveedor_id = request.GET.get('proveedor')
+    
+    # Base Query: Detalles de movimientos confirmados
+    detalles = DetalleMovimiento.objects.filter(
+        movimiento__estado='CONFIRMADO'
+    ).select_related(
+        'movimiento', 
+        'movimiento__proveedor', 
+        'movimiento__almacen_origen',
+        'movimiento__almacen_destino',
+        'movimiento__torre_destino',
+        'movimiento__trabajador',
+        'material'
+    ).order_by('-movimiento__fecha')
+
+    # Filtros de Fecha
+    if fecha_inicio:
+        detalles = detalles.filter(movimiento__fecha__date__gte=fecha_inicio)
+    if fecha_fin:
+        detalles = detalles.filter(movimiento__fecha__date__lte=fecha_fin)
+
+    # Filtros de Tipo
+    if tipo_reporte == 'ingreso':
+        tipos = ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA', 'REINGRESO_LIMA']
+        detalles = detalles.filter(movimiento__tipo__in=tipos)
+        if proveedor_id:
+            detalles = detalles.filter(movimiento__proveedor_id=proveedor_id)
+    else: # salida
+        tipos = ['SALIDA_OBRA', 'SALIDA_EPP', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA', 'DEVOLUCION_LIMA']
+        detalles = detalles.filter(movimiento__tipo__in=tipos)
+
+    # --- EXPORTACIÓN EXCEL ---
+    if request.GET.get('export') == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = f"Reporte {tipo_reporte.capitalize()}"
+        
+        if tipo_reporte == 'ingreso':
+            headers = ["Fecha", "Nota Ingreso", "Proveedor / Origen", "Doc. Referencia", "Código", "Material", "Unidad", "Cantidad", "Costo Unit.", "Total"]
+        else:
+            headers = ["Fecha", "Vale Salida", "Destino", "Código", "Material", "Unidad", "Cantidad", "Costo Promedio", "Total"]
+        
+        ws.append(headers)
+        
+        # Estilo
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
+        
+        for d in detalles:
+            mov = d.movimiento
+            fecha = mov.fecha.strftime("%d/%m/%Y")
+            doc_interno = mov.nota_ingreso or "-"
+            
+            if tipo_reporte == 'ingreso':
+                origen = mov.proveedor.razon_social if mov.proveedor else (mov.almacen_origen.nombre if mov.almacen_origen else "Obra/Trabajador")
+                ws.append([fecha, doc_interno, origen, mov.documento_referencia, d.material.codigo, d.material.descripcion, d.material.unidad_medida, d.cantidad, d.costo_unitario, d.cantidad * d.costo_unitario])
+            else:
+                destino = "-"
+                if mov.torre_destino: destino = f"Torre {mov.torre_destino}"
+                elif mov.trabajador: destino = str(mov.trabajador)
+                elif mov.almacen_destino: destino = mov.almacen_destino.nombre
+                elif mov.tipo == 'DEVOLUCION_LIMA': destino = "Sede Central"
+                ws.append([fecha, doc_interno, destino, d.material.codigo, d.material.descripcion, d.material.unidad_medida, d.cantidad, d.costo_unitario, d.cantidad * d.costo_unitario])
+        
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="Reporte_{tipo_reporte}_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+        wb.save(response)
+        return response
+
+    context = {
+        'detalles': detalles,
+        'proveedores': Proveedor.objects.filter(activo=True),
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin,
+        'tipo_reporte': tipo_reporte,
+        'proveedor_id': proveedor_id
+    }
+    return render(request, 'logistica/reporte_transacciones.html', context)
+
+# ==========================================
+# 7.6 REPORTES GERENCIALES (NUEVOS)
+# ==========================================
+
+def reporte_consumo_torre(request):
+    """
+    Reporte 1: Consumo acumulado por Torre/Frente (Control de Costos).
+    """
+    fecha_inicio = request.GET.get('fecha_inicio')
+    fecha_fin = request.GET.get('fecha_fin')
+    
+    # Filtramos salidas a obra confirmadas
+    consumos = DetalleMovimiento.objects.filter(
+        movimiento__tipo='SALIDA_OBRA',
+        movimiento__estado='CONFIRMADO',
+        movimiento__torre_destino__isnull=False
+    )
+
+    if fecha_inicio:
+        consumos = consumos.filter(movimiento__fecha__date__gte=fecha_inicio)
+    if fecha_fin:
+        consumos = consumos.filter(movimiento__fecha__date__lte=fecha_fin)
+
+    # Agrupación por Torre
+    resumen_torres = consumos.values(
+        'movimiento__torre_destino__codigo'
+    ).annotate(
+        total_soles=Sum(F('cantidad') * F('costo_unitario'))
+    ).order_by('-total_soles')
+
+    # Exportación Excel
+    if request.GET.get('export') == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Consumo por Torre"
+        ws.append(["Torre / Frente", "Código", "Costo Total (S/.)"])
+        
+        for item in resumen_torres:
+            ws.append([
+                item['movimiento__torre_destino__codigo'],
+                item['movimiento__torre_destino__codigo'],
+                item['total_soles']
+            ])
+            
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="Consumo_Torres_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+        wb.save(response)
+        return response
+
+    context = {
+        'resumen': resumen_torres,
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin
+    }
+    return render(request, 'logistica/reporte_consumo_torre.html', context)
+
+def reporte_backlog(request):
+    """
+    Reporte 2: Backlog (Pendientes de Atención).
+    """
+    # Filtramos detalles de requerimientos pendientes o parciales
+    pendientes = DetalleRequerimiento.objects.filter(
+        requerimiento__estado__in=['PENDIENTE', 'PARCIAL']
+    ).annotate(
+        pendiente=F('cantidad_solicitada') - F('cantidad_atendida')
+    ).filter(pendiente__gt=0).select_related('requerimiento', 'material', 'requerimiento__proyecto').order_by('requerimiento__fecha_solicitud')
+
+    if request.GET.get('export') == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Backlog de Materiales"
+        ws.append(["Requerimiento", "Fecha Sol.", "Solicitante", "Código", "Material", "Unidad", "Solicitado", "Atendido", "PENDIENTE"])
+        
+        for p in pendientes:
+            ws.append([
+                p.requerimiento.codigo,
+                p.requerimiento.fecha_solicitud.strftime("%d/%m/%Y"),
+                p.requerimiento.solicitante,
+                p.material.codigo,
+                p.material.descripcion,
+                p.material.unidad_medida,
+                p.cantidad_solicitada,
+                p.cantidad_atendida,
+                p.pendiente
+            ])
+            
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="Backlog_Pendientes_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+        wb.save(response)
+        return response
+
+    context = {'pendientes': pendientes}
+    return render(request, 'logistica/reporte_backlog.html', context)
+
+def reporte_epp_trabajador(request):
+    """
+    Reporte 3: Kardex de EPP por Trabajador.
+    """
+    trabajador_id = request.GET.get('trabajador')
+    
+    # CAMBIO: Filtrar por material EPP y trabajador asignado, en lugar de solo tipo de movimiento.
+    # Esto asegura que si se entregó un casco en una 'SALIDA_OBRA', también aparezca aquí.
+    epps = DetalleMovimiento.objects.filter(
+        material__tipo='EPP',
+        movimiento__trabajador__isnull=False,
+        movimiento__estado='CONFIRMADO',
+        movimiento__tipo__in=['SALIDA_EPP', 'SALIDA_OBRA', 'SALIDA_OFICINA'] # Solo salidas reales de consumo
+    ).select_related('movimiento', 'movimiento__trabajador', 'material').order_by('-movimiento__fecha')
+
+    nombre_trabajador = ''
+    if trabajador_id:
+        epps = epps.filter(movimiento__trabajador_id=trabajador_id)
+        # Obtener nombre para mostrar en el input del buscador
+        try:
+            t = Trabajador.objects.get(id=trabajador_id)
+            nombre_trabajador = f"{t.nombres} {t.apellidos} ({t.dni})"
+        except:
+            pass
+
+    if request.GET.get('export') == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Kardex EPP"
+        ws.append(["Fecha", "Trabajador", "DNI", "Material (EPP)", "Cantidad", "Vale Salida"])
+        
+        for e in epps:
+            ws.append([
+                e.movimiento.fecha.strftime("%d/%m/%Y"),
+                f"{e.movimiento.trabajador.nombres} {e.movimiento.trabajador.apellidos}",
+                e.movimiento.trabajador.dni,
+                e.material.descripcion,
+                e.cantidad,
+                e.movimiento.nota_ingreso
+            ])
+            
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="Kardex_EPP_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+        wb.save(response)
+        return response
+
+    context = {
+        'epps': epps,
+        'trabajador_id': trabajador_id,
+        'nombre_trabajador': nombre_trabajador,
+    }
+    return render(request, 'logistica/reporte_epp_trabajador.html', context)
+
+def reporte_reposicion(request):
+    """
+    Reporte 4: Alertas de Reposición (Stock <= Mínimo).
+    """
+    # Filtramos stocks críticos
+    criticos = Stock.objects.filter(
+        cantidad__lte=F('cantidad_minima'),
+        cantidad_minima__gt=0
+    ).select_related('almacen', 'material', 'material__categoria').annotate(
+        deficit=F('cantidad_minima') - F('cantidad')
+    ).order_by('almacen', 'material__codigo')
+
+    if request.GET.get('export') == 'excel':
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Reposición de Stock"
+        ws.append(["Almacén", "Código", "Material", "Categoría", "Stock Actual", "Stock Mínimo", "Déficit / A Reponer"])
+        
+        # Estilo Alerta
+        red_fill = PatternFill(start_color="E74C3C", end_color="E74C3C", fill_type="solid")
+        
+        for c in criticos:
+            deficit = c.cantidad_minima - c.cantidad
+            ws.append([
+                c.almacen.nombre,
+                c.material.codigo,
+                c.material.descripcion,
+                c.material.categoria.nombre if c.material.categoria else '-',
+                c.cantidad,
+                c.cantidad_minima,
+                deficit
+            ])
+            
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="Alerta_Reposicion_{timezone.now().strftime("%Y%m%d")}.xlsx"'
+        wb.save(response)
+        return response
+
+    context = {'criticos': criticos}
+    return render(request, 'logistica/reporte_reposicion.html', context)
 
 # ==========================================
 # 8. CARGA MASIVA DE DATOS

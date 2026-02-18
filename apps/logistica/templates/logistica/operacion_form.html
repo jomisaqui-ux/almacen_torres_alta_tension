@@ -415,12 +415,16 @@
             divTorre.hide();
             $('#id_torre_destino').val(null).trigger('change');
             
-            // Mostrar trabajador también en ingresos (para Devoluciones o Responsable de Recepción)
-            divTrabajador.show();
-            if (tipoTexto.includes('DEVOLUCION')) {
+            // Lógica de Trabajador en Ingresos:
+            // Solo mostramos trabajador si es una DEVOLUCIÓN (para saber quién devuelve).
+            // En Compras o Transferencias lo ocultamos para evitar asignaciones erróneas de EPP.
+            if (tipoValor === 'DEVOLUCION_OBRA') {
+                divTrabajador.show();
                 labelTrabajador.text('Trabajador (Devuelve)');
             } else {
-                labelTrabajador.text('Trabajador (Recepciona/Solicita)');
+                divTrabajador.hide();
+                $('#id_trabajador').val(null).trigger('change'); // Limpiar valor
+                $('#input_buscar_trabajador').val('');
             }
             
             // Ajuste de columnas de tabla

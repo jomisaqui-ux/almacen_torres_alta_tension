@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Kardex EPP{% endblock %}
+{% block header %}Historial de Entrega de EPP{% endblock %}
+
+{% block extra_css %}
+<style>
+    #resultados_trabajador {
+        max-height: 300px;
+        overflow-y: auto;
+        z-index: 1050;
+        display: none;
+    }
+    .item-trabajador { cursor: pointer; }
+    .item-trabajador:hover { background-color: #f8f9fa; color: #0d6efd; }
+    .item-trabajador.active { background-color: #198754 !important; color: white !important; }
+    .item-trabajador.active small { color: #e0e0e0 !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-body bg-light">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <label class="form-label fw-bold small text-muted">Buscar Trabajador</label>
+                <div class="position-relative">
+                    <input type="text" id="input_buscar_trabajador" class="form-control" 
+                           placeholder="Escriba Nombre, Apellido o DNI..." 
+                           autocomplete="off"
+                           value="{{ nombre_trabajador }}">
+                    <input type="hidden" name="trabajador" id="id_trabajador" value="{{ trabajador_id|default:'' }}">
+                    <div id="resultados_trabajador" class="list-group position-absolute w-100 shadow start-0" style="top: 100%;"></div>
+                </div>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-primary w-100"><i class="fas fa-search"></i> Buscar</button>
+                <button type="submit" name="export" value="excel" class="btn btn-success w-100"><i class="fas fa-file-excel"></i> Excel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow mb-4">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-warning text-dark">
+                    <tr>
+                        <th>Fecha Entrega</th>
+                        <th>Trabajador</th>
+                        <th>DNI</th>
+                        <th>Material (EPP)</th>
+                        <th class="text-center">Cantidad</th>
+                        <th>Vale Salida</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in epps %}
+                    <tr>
+                        <td>{{ e.movimiento.fecha|date:"d/m/Y" }}</td>
+                        <td class="fw-bold">{{ e.movimiento.trabajador.nombres }} {{ e.movimiento.trabajador.apellidos }}</td>
+                        <td>{{ e.movimiento.trabajador.dni }}</td>
+                        <td>{{ e.material.descripcion }}</td>
+                        <td class="text-center fw-bold">{{ e.cantidad|floatformat:0 }}</td>
+                        <td>
+                            <a href="{% url 'generar_vale_pdf' e.movimiento.id %}" target="_blank">{{ e.movimiento.nota_ingreso }}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="text-center text-muted py-4">No se encontraron registros de entrega de EPP.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script>
+    $(document).ready(function() {
+        const $input = $('#input_buscar_trabajador');
+        const $hidden = $('#id_trabajador');
+        const $resultados = $('#resultados_trabajador');
+        let timeout = null;
+
+        $input.on('input', function() {
+            let q = $(this).val();
+            $hidden.val(''); // Limpiar ID si se edita el texto
+            
+            clearTimeout(timeout);
+            if (q.length < 2) {
+                $resultados.hide();
+                return;
+            }
+
+            timeout = setTimeout(function() {
+                $.get("{% url 'api_buscar_trabajador' %}", { q: q }, function(data) {
+                    $resultados.empty();
+                    if (data.results.length > 0) {
+                        data.results.forEach(function(t) {
+                            let nombre = `${t.nombres} ${t.apellidos} (${t.dni})`;
+                            $resultados.append(`
+                                <a href="#" class="list-group-item list-group-item-action item-trabajador" 
+                                   data-id="${t.id}" data-nombre="${nombre}">
+                                    <div class="fw-bold">${t.nombres} ${t.apellidos}</div>
+                                    <small class="text-muted">DNI: ${t.dni}</small>
+                                </a>
+                            `);
+                        });
+                        $resultados.show();
+                    } else {
+                        $resultados.append('<div class="list-group-item text-muted">No encontrado</div>').show();
+                    }
+                });
+            }, 300);
+        });
+
+        $(document).on('click', '.item-trabajador', function(e) {
+            e.preventDefault();
+            let id = $(this).data('id');
+            let nombre = $(this).data('nombre');
+            
+            $hidden.val(id);
+            $input.val(nombre);
+            $resultados.hide();
+        });
+
+        // Cerrar al hacer clic fuera
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.position-relative').length) {
+                $resultados.hide();
+            }
+        });
+    });
+</script>
+{% endblock %}
