@@ -114,7 +114,7 @@
                     <div>
                         <strong>{{ salida.fecha|date:"d/m/Y H:i" }}</strong> - 
                         <a href="{% url 'generar_vale_pdf' salida.id %}" target="_blank">{{ salida.nota_ingreso }}</a>
-                        <span class="text-muted">({{ salida.creado_por.username }})</span>
+                        <span class="text-muted">({{ salida.creado_por.get_full_name|default:salida.creado_por.username }})</span>
                     </div>
                     <span class="badge bg-primary rounded-pill">Ver Vale PDF</span>
                 </li>

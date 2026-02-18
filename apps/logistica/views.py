@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.contrib import messages
 from django.core.exceptions import ValidationError
@@ -6,6 +7,7 @@ from django.http import HttpResponse, JsonResponse
 from django.template.loader import get_template
 from django.db.models import Prefetch, Q, F, Case, When, Value, DecimalField, Window, Sum
 from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, Concat
 from django.utils import timezone
 from decimal import Decimal
 from xhtml2pdf import pisa
@@ -32,27 +34,42 @@ from apps.proyectos.models import Torre # Necesario para reporte de consumo
 # ==========================================
 
 # --- NUEVA VISTA: CAMBIAR ALMACÉN ACTIVO ---
+@login_required
 def cambiar_almacen_sesion(request, almacen_id):
     """
     Establece el almacén activo en la sesión del usuario.
     """
     almacen = get_object_or_404(Almacen, id=almacen_id)
+    
+    # VALIDACIÓN DE SEGURIDAD
+    # Verificamos si el almacén está en la lista de permitidos del usuario (inyectada por middleware)
+    if not request.user.is_superuser and not request.almacenes_permitidos.filter(id=almacen.id).exists():
+        messages.error(request, "Acceso denegado a este almacén.")
+        return redirect('dashboard')
+
     request.session['almacen_activo_id'] = str(almacen.id)
     messages.success(request, f"Trabajando ahora en: {almacen.nombre}")
     
     # Redirigir a la página donde estaba (o al dashboard si no hay referer)
     return redirect(request.META.get('HTTP_REFERER', 'inventario_list'))
 
+@login_required
 def limpiar_almacen_sesion(request):
     """
     Elimina el almacén activo de la sesión (Modo Vista Global).
     """
+    # Solo superusuarios pueden ver la vista global
+    if not request.user.is_superuser:
+        messages.error(request, "Solo administradores pueden usar la Vista Global.")
+        return redirect('dashboard')
+
     if 'almacen_activo_id' in request.session:
         del request.session['almacen_activo_id']
         messages.info(request, "Modo Vista Global activado.")
     
     return redirect(request.META.get('HTTP_REFERER', 'dashboard'))
 
+@login_required
 def generar_vale_pdf(request, movimiento_id):
     movimiento = get_object_or_404(Movimiento, id=movimiento_id)
     config = Configuracion.objects.first()
@@ -105,6 +122,7 @@ def generar_vale_pdf(request, movimiento_id):
        return HttpResponse('Error al generar PDF <pre>' + html + '</pre>')
     return response
 
+@login_required
 def generar_requerimiento_pdf(request, req_id):
     """
     Genera el PDF oficial de un Requerimiento de Materiales.
@@ -148,6 +166,7 @@ def generar_requerimiento_pdf(request, req_id):
 # 2. VISTAS DE INVENTARIO Y LISTADOS
 # ==========================================
 
+@login_required
 def inventario_list(request):
     """
     Reporte de Stock Físico con Búsqueda Inteligente.
@@ -195,6 +214,7 @@ def inventario_list(request):
     }
     return render(request, 'logistica/inventario.html', context)
 
+@login_required
 def movimiento_list(request):
     """
     Pantalla Principal de Movimientos.
@@ -230,6 +250,7 @@ def movimiento_list(request):
     }
     return render(request, 'logistica/movimiento_list.html', context)
 
+@login_required
 def kardex_producto(request, almacen_id, material_id):
     """
     Muestra la historia clínica de un material específico en un almacén.
@@ -310,6 +331,7 @@ def kardex_producto(request, almacen_id, material_id):
     }
     return render(request, 'logistica/kardex_producto.html', context)
 
+@login_required
 def requerimiento_list(request):
     """
     Lista de seguimiento de Requerimientos (Pedidos de Obra).
@@ -321,6 +343,7 @@ def requerimiento_list(request):
     }
     return render(request, 'logistica/requerimiento_list.html', context)
 
+@login_required
 def requerimiento_detail(request, req_id):
     """
     Ver el progreso de un requerimiento: Qué se pidió vs Qué se ha entregado.
@@ -335,6 +358,7 @@ def requerimiento_detail(request, req_id):
     }
     return render(request, 'logistica/requerimiento_detail.html', context)
 
+@login_required
 def requerimiento_create(request):
     """
     Crea un nuevo Requerimiento (Pedido de Materiales).
@@ -380,6 +404,7 @@ def requerimiento_create(request):
 # 3. CREACIÓN Y GESTIÓN DE MOVIMIENTOS
 # ==========================================
 
+@login_required
 def operacion_almacen(request, tipo_accion, almacen_id):
     """
     Vista principal para registrar Ingresos y Salidas.
@@ -520,6 +545,7 @@ def operacion_almacen(request, tipo_accion, almacen_id):
     }
     return render(request, 'logistica/operacion_form.html', context)
 
+@login_required
 def editar_movimiento(request, movimiento_id):
     """
     Permite editar un movimiento existente (Solo Borradores).
@@ -568,6 +594,7 @@ def editar_movimiento(request, movimiento_id):
 # 4. ACCIONES DE MOVIMIENTO (CONFIRMAR / ELIMINAR)
 # ==========================================
 
+@login_required
 def confirmar_movimiento_web(request, movimiento_id):
     movimiento = get_object_or_404(Movimiento, id=movimiento_id)
     
@@ -593,6 +620,7 @@ def confirmar_movimiento_web(request, movimiento_id):
     
     return redirect('movimiento_list')
 
+@login_required
 def anular_movimiento(request, movimiento_id):
     """
     Anula un movimiento. Si es Borrador lo cancela, si es Confirmado revierte stock.
@@ -611,6 +639,7 @@ def anular_movimiento(request, movimiento_id):
 # 5. APIs Y HERRAMIENTAS (SCRIPTS)
 # ==========================================
 
+@login_required
 def api_consultar_stock(request, almacen_id, material_id):
     """
     API JSON: Devuelve el stock actual de un material y su costo promedio.
@@ -634,6 +663,7 @@ def api_consultar_stock(request, almacen_id, material_id):
     except Exception as e:
         return JsonResponse({'stock': 0, 'precio': 0, 'error': str(e)})
 
+@login_required
 def api_crear_trabajador(request):
     """
     API para creación rápida de trabajadores desde el formulario de salida.
@@ -665,6 +695,7 @@ def api_crear_trabajador(request):
     
     return JsonResponse({'success': False, 'error': 'Método no permitido'})
 
+@login_required
 def api_buscar_trabajador(request):
     """
     Buscador optimizado para miles de registros.
@@ -676,9 +707,16 @@ def api_buscar_trabajador(request):
     qs = Trabajador.objects.filter(activo=True).filter(
         Q(nombres__icontains=q) | Q(apellidos__icontains=q) | Q(dni__icontains=q)
     ).values('id', 'nombres', 'apellidos', 'dni')[:20] # Limitamos a 20 resultados
+    # Concatenamos nombres + espacio + apellidos para permitir búsquedas como "Juan Perez"
+    qs = Trabajador.objects.filter(activo=True).annotate(
+        nombre_completo=Concat('nombres', Value(' '), 'apellidos')
+    ).filter(
+        Q(nombre_completo__icontains=q) | Q(dni__icontains=q)
+    ).values('id', 'nombres', 'apellidos', 'dni')[:20]
     
     return JsonResponse({'results': list(qs)})
 
+@login_required
 def api_listar_activos(request):
     """
     API para llenar dinámicamente el select de activos según la operación.
@@ -710,6 +748,7 @@ def api_listar_activos(request):
 # 6. ZONA DE PELIGRO (ADMINISTRACIÓN)
 # ==========================================
 
+@login_required
 def reset_database(request):
     """
     Limpia toda la data transaccional (Movimientos, Stock, Requerimientos).
@@ -758,6 +797,7 @@ def reset_database(request):
 
     return render(request, 'logistica/reset_db.html')
 
+@login_required
 def cerrar_requerimiento(request, req_id):
     """
     Cierra forzosamente un requerimiento (ej: ya no se necesita el saldo pendiente).
@@ -788,6 +828,7 @@ def cerrar_requerimiento(request, req_id):
 # 7. EXPORTACIÓN A EXCEL
 # ==========================================
 
+@login_required
 def exportar_inventario_excel(request):
     """
     Genera un Excel con el stock actual filtrado por la búsqueda.
@@ -850,6 +891,7 @@ def exportar_inventario_excel(request):
     wb.save(response)
     return response
 
+@login_required
 def exportar_kardex_excel(request, almacen_id, material_id):
     """
     Genera el Kardex de un producto específico en Excel.
@@ -934,7 +976,7 @@ def exportar_kardex_excel(request, almacen_id, material_id):
             entrada,
             salida,
             saldo_actual,
-            mov.creado_por.username
+            mov.creado_por.get_full_name() or mov.creado_por.username
         ])
 
         # Recalcular saldo anterior
@@ -950,6 +992,7 @@ def exportar_kardex_excel(request, almacen_id, material_id):
     wb.save(response)
     return response
 
+@login_required
 def exportar_activos_externos_excel(request):
     """
     Genera un reporte Excel de los activos que están actualmente en Sede Central (Devueltos).
@@ -986,7 +1029,7 @@ def exportar_activos_externos_excel(request):
         if ultimo_mov:
             fecha_dev = ultimo_mov.movimiento.fecha.strftime("%d/%m/%Y %H:%M")
             guia = f"{ultimo_mov.movimiento.nota_ingreso} / {ultimo_mov.movimiento.documento_referencia}"
-            usuario = ultimo_mov.movimiento.creado_por.username
+            usuario = ultimo_mov.movimiento.creado_por.get_full_name() or ultimo_mov.movimiento.creado_por.username
 
         ws.append([
             activo.codigo,
@@ -1013,6 +1056,7 @@ def exportar_activos_externos_excel(request):
 # 7.5 REPORTE DETALLADO DE TRANSACCIONES
 # ==========================================
 
+@login_required
 def reporte_transacciones(request):
     """
     Reporte detallado de movimientos (Sábana de datos) para gestión y contabilidad.
@@ -1105,6 +1149,7 @@ def reporte_transacciones(request):
 # 7.6 REPORTES GERENCIALES (NUEVOS)
 # ==========================================
 
+@login_required
 def reporte_consumo_torre(request):
     """
     Reporte 1: Consumo acumulado por Torre/Frente (Control de Costos).
@@ -1157,6 +1202,7 @@ def reporte_consumo_torre(request):
     }
     return render(request, 'logistica/reporte_consumo_torre.html', context)
 
+@login_required
 def reporte_backlog(request):
     """
     Reporte 2: Backlog (Pendientes de Atención).
@@ -1195,6 +1241,7 @@ def reporte_backlog(request):
     context = {'pendientes': pendientes}
     return render(request, 'logistica/reporte_backlog.html', context)
 
+@login_required
 def reporte_epp_trabajador(request):
     """
     Reporte 3: Kardex de EPP por Trabajador.
@@ -1248,6 +1295,7 @@ def reporte_epp_trabajador(request):
     }
     return render(request, 'logistica/reporte_epp_trabajador.html', context)
 
+@login_required
 def reporte_reposicion(request):
     """
     Reporte 4: Alertas de Reposición (Stock <= Mínimo).
@@ -1293,6 +1341,7 @@ def reporte_reposicion(request):
 # 8. CARGA MASIVA DE DATOS
 # ==========================================
 
+@login_required
 def descargar_plantilla_importacion(request):
     """
     Genera y descarga una plantilla Excel vacía con las cabeceras correctas.
@@ -1341,6 +1390,7 @@ def descargar_plantilla_importacion(request):
     wb.save(response)
     return response
 
+@login_required
 def importar_datos_excel(request):
     """
     Procesa el archivo Excel subido y crea/actualiza registros.

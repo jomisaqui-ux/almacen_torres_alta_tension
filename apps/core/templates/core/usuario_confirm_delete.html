@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}Eliminar Usuario{% endblock %}
+{% block header %}Eliminar Usuario{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow border-danger">
+            <div class="card-body text-center">
+                <h4 class="text-danger mb-3">¿Estás seguro?</h4>
+                <p>Vas a eliminar al usuario <strong>{{ object.username }}</strong>.</p>
+                <p class="small text-muted">Esta acción no se puede deshacer.</p>
+                
+                <form method="post">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+                    <a href="{% url 'usuario_list' %}" class="btn btn-secondary">Cancelar</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

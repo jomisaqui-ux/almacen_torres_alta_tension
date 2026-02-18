@@ -29,3 +29,13 @@ class Configuracion(models.Model):
     class Meta:
         verbose_name = "Configuración General"
         verbose_name_plural = "Configuración General"
+
+class PerfilUsuario(models.Model):
+    """
+    Extensión del usuario para controlar permisos de acceso a almacenes.
+    """
+    usuario = models.OneToOneField(User, on_delete=models.CASCADE, related_name='perfil')
+    almacenes = models.ManyToManyField('logistica.Almacen', blank=True, related_name='usuarios_permitidos', help_text="Almacenes a los que tiene acceso este usuario.")
+
+    def __str__(self):
+        return f"Perfil de {self.usuario.username}"

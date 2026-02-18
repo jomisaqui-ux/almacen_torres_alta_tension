@@ -197,6 +197,10 @@
                             {% else %}
                                 <div class="small text-muted ps-1 opacity-25">--</div>
                             {% endif %}
+                            
+                            <div class="small text-muted mt-1" title="Registrado por">
+                                <i class="fas fa-user-edit small me-1"></i> {{ mov.creado_por.get_full_name|default:mov.creado_por.username }}
+                            </div>
                         </td>
 
                         <td class="text-center">

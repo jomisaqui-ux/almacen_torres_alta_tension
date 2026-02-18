@@ -17,6 +17,7 @@
         .card-kpi { border: none; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s; }
         .card-kpi:hover { transform: translateY(-5px); }
     </style>
+    {% block extra_css %}{% endblock %}
 </head>
 <body>
 
@@ -32,6 +33,7 @@
 
 <div class="container-fluid">
     <div class="row">
+        {% if user.is_authenticated %}
         <nav class="col-md-3 col-lg-2 d-md-block sidebar collapse" id="sidebarMenu">
             <div class="brand">
                 {% if config_empresa.logo %}
@@ -168,22 +170,30 @@
                     </li>
                 </ul>
 
-                {% if request.user.is_superuser and not almacen_activo %}
+                {% if request.user.is_superuser %}
                 <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
                     <span>Administración</span>
                 </h6>
                 <ul class="nav flex-column mb-2">
                     <li class="nav-item">
+                        <a class="nav-link" href="{% url 'usuario_list' %}">
+                            <i class="fas fa-users-cog me-2"></i> Gestión de Usuarios
+                        </a>
+                    </li>
+                    {% if not almacen_activo %}
+                    <li class="nav-item">
                         <a class="nav-link text-danger" href="{% url 'reset_database' %}">
                             <i class="fas fa-exclamation-triangle me-2"></i> Resetear Sistema
                         </a>
                     </li>
+                    {% endif %}
                 </ul>
                 {% endif %}
             </div>
         </nav>
+        {% endif %}
 
-        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+        <main class="{% if user.is_authenticated %}col-md-9 ms-sm-auto col-lg-10{% else %}col-12{% endif %} px-md-4">
             <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
                 <h1 class="h2">{% block header %}Panel Principal{% endblock %}</h1>
                 <div class="btn-toolbar mb-2 mb-md-0">
@@ -208,7 +218,7 @@
                                     </a>
                                 </li>
                             {% endfor %}
-                            {% if almacen_activo %}
+                            {% if almacen_activo and request.user.is_superuser %}
                                 <li><hr class="dropdown-divider"></li>
                                 <li><a class="dropdown-item small text-muted" href="{% url 'limpiar_almacen_sesion' %}">Ver Todo (Admin)</a></li>
                             {% endif %}
@@ -219,7 +229,10 @@
                         <button type="button" class="btn btn-sm btn-outline-secondary">
                             <i class="fas fa-user-circle"></i> {{ user.username }}
                         </button>
-                        <a href="/admin/logout/" class="btn btn-sm btn-outline-danger">Salir</a>
+                        <form action="{% url 'logout' %}" method="post" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Salir</button>
+                        </form>
                     </div>
                 </div>
             </div>

@@ -200,7 +200,7 @@
         </tr>
         <tr>
             <td class="label">Usuario:</td>
-            <td class="value">{{ movimiento.creado_por.username }}</td>
+            <td class="value">{{ movimiento.creado_por.get_full_name|default:movimiento.creado_por.username|upper }}</td>
             <td class="label"></td>
             <td class="value"></td>
         </tr>
@@ -210,7 +210,7 @@
             <td class="label">Referencia:</td>
             <td class="value">{{ movimiento.documento_referencia|default:"---" }}</td>
             <td class="label">Usuario:</td>
-            <td class="value">{{ movimiento.creado_por.username }}</td>
+            <td class="value">{{ movimiento.creado_por.get_full_name|default:movimiento.creado_por.username|upper }}</td>
         </tr>
         {% endif %}
     </table>

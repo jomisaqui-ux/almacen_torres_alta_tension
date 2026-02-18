@@ -1,10 +1,15 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView
+from django.urls import reverse_lazy
 from django.db.models import Sum, Count, F
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal # <--- ESTA IMPORTACIÓN ES CRÍTICA
+from django.contrib.auth import get_user_model
+from .forms import UsuarioForm
 
 # Importamos modelos para sacar métricas
 from apps.proyectos.models import Proyecto, Torre
@@ -94,3 +99,46 @@ def dashboard(request):
         'chart_salidas': data_salidas,
     }
     return render(request, 'core/dashboard.html', context)
+
+# ==========================================
+# GESTIÓN DE USUARIOS (ADMINISTRACIÓN)
+# ==========================================
+
+User = get_user_model()
+
+class SuperUserRequiredMixin(UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_superuser
+
+class UsuarioListView(LoginRequiredMixin, SuperUserRequiredMixin, ListView):
+    model = User
+    template_name = 'core/usuario_list.html'
+    context_object_name = 'usuarios'
+    queryset = User.objects.all().order_by('username')
+
+class UsuarioCreateView(LoginRequiredMixin, SuperUserRequiredMixin, CreateView):
+    model = User
+    form_class = UsuarioForm
+    template_name = 'core/usuario_form.html'
+    success_url = reverse_lazy('usuario_list')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['titulo'] = 'Crear Nuevo Usuario'
+        return context
+
+class UsuarioUpdateView(LoginRequiredMixin, SuperUserRequiredMixin, UpdateView):
+    model = User
+    form_class = UsuarioForm
+    template_name = 'core/usuario_form.html'
+    success_url = reverse_lazy('usuario_list')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['titulo'] = f'Editar Usuario: {self.object.username}'
+        return context
+
+class UsuarioDeleteView(LoginRequiredMixin, SuperUserRequiredMixin, DeleteView):
+    model = User
+    template_name = 'core/usuario_confirm_delete.html'
+    success_url = reverse_lazy('usuario_list')

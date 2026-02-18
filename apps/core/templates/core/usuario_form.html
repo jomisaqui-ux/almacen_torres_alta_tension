@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }}{% endblock %}
+{% block header %}{{ titulo }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    #resultados_trabajador {
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 1050;
+        display: none;
+    }
+    .item-trabajador { cursor: pointer; }
+    .item-trabajador:hover { background-color: #f8f9fa; color: #0d6efd; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow mb-4">
+            <div class="card-body">
+                
+                <!-- BUSCADOR DE TRABAJADOR (AUTOCOMPLETAR) -->
+                <div class="alert alert-light border mb-4">
+                    <label class="form-label fw-bold text-primary"><i class="fas fa-search me-2"></i>Autocompletar datos desde Personal</label>
+                    <div class="position-relative">
+                        <input type="text" id="input_buscar_trabajador" class="form-control" placeholder="Buscar por Nombre o DNI..." autocomplete="off">
+                        <div id="resultados_trabajador" class="list-group position-absolute w-100 shadow start-0" style="top: 100%;"></div>
+                    </div>
+                    <div class="form-text small">Seleccione un trabajador para llenar automáticamente Nombres, Apellidos y DNI.</div>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Usuario (Login) *</label>
+                            {{ form.username }}
+                            {{ form.username.errors }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Contraseña</label>
+                            {{ form.password }}
+                            <div class="form-text small">{{ form.password.help_text }}</div>
+                            {{ form.password.errors }}
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Nombres</label>
+                            {{ form.first_name }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Apellidos</label>
+                            {{ form.last_name }}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        {{ form.email }}
+                    </div>
+
+                    <hr>
+                    <h6 class="text-primary fw-bold mb-3">Permisos y Accesos</h6>
+                    
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.is_active }}
+                            <label class="form-check-label">Usuario Activo (Puede ingresar al sistema)</label>
+                        </div>
+                        <div class="form-check form-switch mt-2">
+                            {{ form.is_superuser }}
+                            <label class="form-check-label text-danger fw-bold">Es Administrador (Acceso Total)</label>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Almacenes Permitidos</label>
+                        <div class="card p-3 bg-light">
+                            {{ form.almacenes }}
+                        </div>
+                        <div class="form-text">Si es Administrador, tendrá acceso a todos independientemente de esta selección.</div>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{% url 'usuario_list' %}" class="btn btn-secondary me-md-2">Cancelar</a>
+                        <button type="submit" class="btn btn-primary">Guardar Usuario</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script>
+    $(document).ready(function() {
+        const $input = $('#input_buscar_trabajador');
+        const $resultados = $('#resultados_trabajador');
+        let timeout = null;
+
+        $input.on('input', function() {
+            let q = $(this).val();
+            
+            clearTimeout(timeout);
+            if (q.length < 2) {
+                $resultados.hide();
+                return;
+            }
+
+            timeout = setTimeout(function() {
+                $.get("{% url 'api_buscar_trabajador' %}", { q: q }, function(data) {
+                    $resultados.empty();
+                    if (data.results.length > 0) {
+                        data.results.forEach(function(t) {
+                            let nombre = `${t.nombres} ${t.apellidos}`;
+                            $resultados.append(`
+                                <a href="#" class="list-group-item list-group-item-action item-trabajador" 
+                                   data-nombres="${t.nombres}" 
+                                   data-apellidos="${t.apellidos}" 
+                                   data-dni="${t.dni}">
+                                    <div class="fw-bold">${nombre}</div>
+                                    <small class="text-muted">DNI: ${t.dni}</small>
+                                </a>
+                            `);
+                        });
+                        $resultados.show();
+                    } else {
+                        $resultados.append('<div class="list-group-item text-muted small">No encontrado</div>').show();
+                    }
+                });
+            }, 300);
+        });
+
+        $(document).on('click', '.item-trabajador', function(e) {
+            e.preventDefault();
+            let nombres = $(this).data('nombres');
+            let apellidos = $(this).data('apellidos');
+            let dni = $(this).data('dni');
+            
+            // Llenar campos del formulario
+            $('#id_first_name').val(nombres);
+            $('#id_last_name').val(apellidos);
+            $('#id_dni').val(dni);
+            
+            // Sugerir usuario si está vacío (Usamos el DNI como login sugerido)
+            if (!$('#id_username').val()) {
+                $('#id_username').val(dni);
+            }
+
+            $input.val(''); 
+            $resultados.hide();
+        });
+
+        // Cerrar al hacer clic fuera
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.position-relative').length) {
+                $resultados.hide();
+            }
+        });
+    });
+</script>
+{% endblock %}

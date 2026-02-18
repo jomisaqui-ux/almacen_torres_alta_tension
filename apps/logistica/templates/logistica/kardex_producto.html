@@ -68,7 +68,7 @@ Historial: {{ material.descripcion }}
                             {% endif %}
                         </td>
                         
-                        <td class="small">{{ det.movimiento.creado_por.username }}</td>
+                        <td class="small">{{ det.movimiento.creado_por.get_full_name|default:det.movimiento.creado_por.username }}</td>
                         <td class="text-center">
                             <a href="{% url 'generar_vale_pdf' det.movimiento.id %}" target="_blank" class="text-secondary">
                                 <i class="fas fa-file-pdf"></i>

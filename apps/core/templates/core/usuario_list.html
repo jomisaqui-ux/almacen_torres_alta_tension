@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de Usuarios{% endblock %}
+{% block header %}Usuarios del Sistema{% endblock %}
+
+{% block content %}
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold text-primary">Usuarios Registrados</h6>
+        <a href="{% url 'usuario_create' %}" class="btn btn-primary btn-sm">
+            <i class="fas fa-user-plus me-1"></i> Nuevo Usuario
+        </a>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Usuario</th>
+                        <th>Nombre Completo</th>
+                        <th>Email</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in usuarios %}
+                    <tr>
+                        <td class="fw-bold text-primary">{{ u.username }}</td>
+                        <td>{{ u.get_full_name }}</td>
+                        <td>{{ u.email|default:"-" }}</td>
+                        <td>
+                            {% if u.is_superuser %}
+                                <span class="badge bg-danger">Administrador</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Operador</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if u.is_active %}
+                                <span class="badge bg-success">Activo</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactivo</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'usuario_update' u.id %}" class="btn btn-sm btn-info" title="Editar"><i class="fas fa-pen"></i></a>
+                            <a href="{% url 'usuario_delete' u.id %}" class="btn btn-sm btn-danger" title="Eliminar"><i class="fas fa-trash"></i></a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

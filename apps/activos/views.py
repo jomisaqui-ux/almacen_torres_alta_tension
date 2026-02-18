@@ -1,5 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import ListView, CreateView, UpdateView, DetailView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.decorators import login_required
 from django.urls import reverse_lazy
 from django.contrib import messages
 from django.db import transaction
@@ -14,7 +16,7 @@ from .forms import ActivoForm, AsignacionForm, DevolucionForm, KitForm, AsignarK
 from apps.logistica.models import Movimiento, DetalleMovimiento, Almacen
 from apps.logistica.services import KardexService
 
-class ActivoListView(ListView):
+class ActivoListView(LoginRequiredMixin, ListView):
     model = Activo
     template_name = 'activos/activo_list.html'
     context_object_name = 'activos'
@@ -63,7 +65,7 @@ class ActivoListView(ListView):
         context['almacenes'] = Almacen.objects.all() # Para llenar el select de filtro
         return context
 
-class ActivoUpdateView(UpdateView):
+class ActivoUpdateView(LoginRequiredMixin, UpdateView):
     model = Activo
     form_class = ActivoForm
     template_name = 'activos/activo_form.html'
@@ -74,7 +76,7 @@ class ActivoUpdateView(UpdateView):
         context['titulo'] = 'Editar Activo'
         return context
 
-class ActivoDetailView(DetailView):
+class ActivoDetailView(LoginRequiredMixin, DetailView):
     model = Activo
     template_name = 'activos/activo_detail.html'
     context_object_name = 'activo'
@@ -86,6 +88,7 @@ class ActivoDetailView(DetailView):
         context['pertenece_a_kit'] = self.object.kit  # Pasamos la información del kit al template
         return context
 
+@login_required
 def asignar_activo(request, pk):
     activo = get_object_or_404(Activo, pk=pk)
     
@@ -155,6 +158,7 @@ def asignar_activo(request, pk):
     }
     return render(request, 'activos/asignar_form.html', context)
 
+@login_required
 def devolver_activo(request, pk):
     activo = get_object_or_404(Activo, pk=pk)
     
@@ -233,12 +237,12 @@ def devolver_activo(request, pk):
 # GESTIÓN DE KITS
 # ==========================================
 
-class KitListView(ListView):
+class KitListView(LoginRequiredMixin, ListView):
     model = Kit
     template_name = 'activos/kit_list.html'
     context_object_name = 'kits'
 
-class KitCreateView(CreateView):
+class KitCreateView(LoginRequiredMixin, CreateView):
     model = Kit
     form_class = KitForm
     template_name = 'activos/kit_form.html'
@@ -249,6 +253,7 @@ class KitCreateView(CreateView):
         context['titulo'] = 'Crear Nuevo Kit'
         return context
 
+@login_required
 def asignar_kit(request, pk):
     kit = get_object_or_404(Kit, pk=pk)
     componentes = kit.componentes.all()
@@ -309,6 +314,7 @@ def asignar_kit(request, pk):
     }
     return render(request, 'activos/asignar_kit.html', context)
 
+@login_required
 def administrar_kit(request, pk):
     """
     Vista para agregar o quitar activos de un Kit.
@@ -345,6 +351,7 @@ def administrar_kit(request, pk):
     }
     return render(request, 'activos/kit_componentes.html', context)
 
+@login_required
 def exportar_activos_excel(request):
     """
     Genera el Reporte Maestro de Activos Fijos (Sábana de Equipos).

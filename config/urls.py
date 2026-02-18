@@ -2,11 +2,10 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from apps.core.views import dashboard # Importamos la vista
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', dashboard, name='dashboard'), # Ruta raíz
+    path('', include('apps.core.urls')), # Core (Dashboard + Usuarios)
     path('logistica/', include('apps.logistica.urls')),
     path('rrhh/', include('apps.rrhh.urls')),
     path('activos/', include('apps.activos.urls')),
