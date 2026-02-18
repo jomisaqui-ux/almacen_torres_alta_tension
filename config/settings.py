@@ -15,7 +15,9 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 SECRET_KEY = env('SECRET_KEY')
 DEBUG = env.bool('DEBUG', default=False)
 
-ALLOWED_HOSTS = ["*", ".dev.tunnels.ms", "localhost", "127.0.0.1"] # "*", ".dev.tunnels.ms"
+# Configuración segura para Pre-Producción/Producción
+# Lee la lista desde el .env (separada por comas) o usa defaults locales seguros
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=["localhost", "127.0.0.1", ".dev.tunnels.ms"])
 
 
 # Application definition
