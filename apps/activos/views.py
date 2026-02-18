@@ -175,10 +175,6 @@ def devolver_activo(request, pk):
 
                     # INTENTO AUTOMÁTICO: Generar Movimiento de Devolución (Documento NI)
                     if activo.material and almacen_destino:
-                            # Generar correlativo único para evitar errores
-                            correlativo = Movimiento.objects.filter(tipo='DEVOLUCION_OBRA').count() + 1
-                            nota_ingreso = f"NI-DEV-{str(correlativo).zfill(5)}"
-
                             # Crear Movimiento de Devolución
                             mov = Movimiento.objects.create(
                                 proyecto=almacen_destino.proyecto,
@@ -187,7 +183,6 @@ def devolver_activo(request, pk):
                                 fecha=timezone.now(),
                                 creado_por=request.user,
                                 observacion=f"Devolución: {observacion}",
-                                nota_ingreso=nota_ingreso,
                                 documento_referencia=f"RET-{activo.codigo}"
                             )
                             

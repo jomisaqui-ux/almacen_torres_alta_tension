@@ -44,3 +44,19 @@ class Material(models.Model):
         verbose_name = "Material"
         verbose_name_plural = "Materiales"
         ordering = ['codigo']
+
+class Proveedor(models.Model):
+    ruc = models.CharField(max_length=11, unique=True)
+    razon_social = models.CharField(max_length=200)
+    direccion = models.CharField(max_length=255, blank=True)
+    contacto = models.CharField(max_length=100, blank=True)
+    telefono = models.CharField(max_length=20, blank=True)
+    email = models.EmailField(blank=True)
+    activo = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.razon_social
+
+    class Meta:
+        verbose_name = "Proveedor"
+        verbose_name_plural = "Proveedores"

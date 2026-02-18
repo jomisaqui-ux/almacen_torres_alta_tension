@@ -189,6 +189,16 @@ class Movimiento(models.Model):
     almacen_origen = models.ForeignKey(Almacen, related_name='salidas', on_delete=models.PROTECT, null=True, blank=True)
     almacen_destino = models.ForeignKey(Almacen, related_name='ingresos', on_delete=models.PROTECT, null=True, blank=True)
     
+    # Proveedor (Solo para Ingresos de Compra)
+    proveedor = models.ForeignKey(
+        'catalogo.Proveedor', 
+        on_delete=models.PROTECT, 
+        null=True, 
+        blank=True, 
+        related_name='ingresos',
+        help_text="Proveedor (Solo para Ingresos por Compra)"
+    )
+    
     # Solo para Salidas a Obra
     torre_destino = models.ForeignKey(Torre, related_name='consumos', on_delete=models.PROTECT, null=True, blank=True)
     trabajador = models.ForeignKey(Trabajador, related_name='movimientos', on_delete=models.PROTECT, null=True, blank=True, help_text="Trabajador solicitante o beneficiario")
@@ -205,18 +215,41 @@ class Movimiento(models.Model):
     )
 
     def save(self, *args, **kwargs):
-        # Lógica para autogenerar Nota de Ingreso (NI) si es compra y no tiene código
-        if self.tipo == 'INGRESO_COMPRA' and not self.nota_ingreso:
-            # Contamos cuántos ingresos existen en ESTE proyecto
-            # Nota: Si el proyecto es None al inicio (borrador), se asignará después
-            if self.proyecto:
-                correlativo = Movimiento.objects.filter(
-                    proyecto=self.proyecto, 
-                    tipo='INGRESO_COMPRA'
-                ).count() + 1
+        # Lógica CENTRALIZADA para autogenerar Nota de Ingreso (NI) o Vale de Salida (VS)
+        if not self.nota_ingreso and self.proyecto:
+            # Definición de Naturaleza del Movimiento
+            es_entrada = self.tipo in ['INGRESO_COMPRA', 'DEVOLUCION_OBRA', 'TRANSFERENCIA_ENTRADA', 'REINGRESO_LIMA']
+            es_salida = self.tipo in ['SALIDA_OBRA', 'SALIDA_EPP', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA', 'DEVOLUCION_LIMA']
+            
+            # Manejo especial para AJUSTE_INVENTARIO
+            if self.tipo == 'AJUSTE_INVENTARIO':
+                if self.almacen_destino: es_entrada = True
+                elif self.almacen_origen: es_salida = True
+
+            prefix = None
+            if es_entrada:
+                prefix = 'NI-'
+            elif es_salida:
+                prefix = 'VS-'
+            
+            if prefix:
+                # Buscamos el último del mismo prefijo en el proyecto para seguir la secuencia
+                ultimo = Movimiento.objects.filter(
+                    proyecto=self.proyecto,
+                    nota_ingreso__startswith=prefix
+                ).order_by('-nota_ingreso').first()
                 
-                # Formato: NI-0001, NI-0002...
-                self.nota_ingreso = f"NI-{str(correlativo).zfill(5)}"
+                contador = 1
+                if ultimo:
+                    try:
+                        # Ejemplo: NI-0007 -> toma "0007" -> suma 1 -> 8
+                        partes = ultimo.nota_ingreso.split('-')
+                        if len(partes) == 2 and partes[1].isdigit():
+                            contador = int(partes[1]) + 1
+                    except:
+                        pass # Si falla el parseo, reinicia en 1
+                
+                self.nota_ingreso = f"{prefix}{str(contador).zfill(5)}"
         
         super().save(*args, **kwargs)
 

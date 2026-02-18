@@ -147,6 +147,8 @@
                                 <span class="fw-bold text-secondary" style="font-size: 0.8rem;">DE:</span> 
                                 {% if mov.almacen_origen %}
                                     {{ mov.almacen_origen.nombre }}
+                                {% elif mov.proveedor %}
+                                    {{ mov.proveedor.razon_social }}
                                 {% else %}
                                     Proveedor Ext.
                                 {% endif %}

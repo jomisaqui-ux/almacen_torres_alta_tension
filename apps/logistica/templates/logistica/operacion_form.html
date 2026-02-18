@@ -54,6 +54,11 @@
                     {{ form.almacen_origen }}
                 </div>
                 {% endif %}
+
+                <div class="col-md-4" id="div_proveedor" style="display:none;">
+                    <label class="form-label fw-bold small text-uppercase text-success">Proveedor</label>
+                    {{ form.proveedor }}
+                </div>
                 
                 {% if form.almacen_destino.is_hidden == False %}
                 <div class="col-md-4">
@@ -334,6 +339,7 @@
         // ELEMENTOS DEL DOM (Los contenedores col-md-4)
         let divOrigen = $('#id_almacen_origen').closest('.col-md-4');
         let divDestino = $('#id_almacen_destino').closest('.col-md-4');
+        let divProveedor = $('#div_proveedor');
         let divTorre = $('#id_torre_destino').closest('.col-md-4');
         let divTrabajador = $('#id_trabajador').closest('.col-md-4');
         let labelTrabajador = divTrabajador.find('label');
@@ -348,6 +354,7 @@
         if (tipoValor === 'DEVOLUCION_LIMA') {
             divRequerimiento.hide();
             divOrigen.show(); // Sale de aquí
+            divProveedor.hide();
             divDestino.hide(); // Va a externo (no seleccionable)
             divTorre.hide();
             divTrabajador.hide();
@@ -370,6 +377,7 @@
         if (tipoValor === 'TRANSFERENCIA_SALIDA') {
             divRequerimiento.hide();
             divOrigen.hide(); // Se oculta visualmente (ya sabemos que sale de aquí)
+            divProveedor.hide();
             divDestino.show(); // Se habilita destino (A dónde va)
             divTorre.hide();
             divTrabajador.hide();
@@ -389,8 +397,11 @@
             // EXCEPCIÓN: Si es Transferencia de Entrada, necesitamos ver de dónde viene
             if (tipoTexto.includes('TRANSFERENCIA')) {
                 divOrigen.show();
+                divProveedor.hide();
             } else {
                 divOrigen.hide();
+                // Si es Compra -> Mostrar Proveedor
+                if (tipoValor === 'INGRESO_COMPRA') divProveedor.show(); else divProveedor.hide();
             }
             
             // 2. Destino: Se muestra (es donde entra)
@@ -433,6 +444,7 @@
             divRequerimiento.show();
             // 1. Origen: Se muestra (sale de aquí)
             divOrigen.show();
+            divProveedor.hide();
             if(!$('#id_almacen_origen').val()) {
                 $('#id_almacen_origen').val(ALMACEN_ID_URL).trigger('change');
             }
@@ -467,6 +479,7 @@
             // === ES TRANSFERENCIA ===
             divRequerimiento.hide();
             divOrigen.show();
+            divProveedor.hide();
             divDestino.show();
             divTorre.hide();
             divTrabajador.hide();

@@ -4,6 +4,7 @@ from django.db.models import F
 from .models import Movimiento, DetalleMovimiento, Requerimiento, DetalleRequerimiento
 from apps.activos.models import Activo
 from apps.rrhh.models import Trabajador
+from apps.catalogo.models import Proveedor
 
 # ==========================================
 # 1. FORMULARIO DE LA CABECERA (Movimiento)
@@ -15,6 +16,7 @@ class MovimientoForm(forms.ModelForm):
         fields = [
             'tipo', 
             'almacen_origen', 
+            'proveedor',            # <--- Campo Nuevo
             'requerimiento',
             'almacen_destino', 
             'torre_destino', 
@@ -84,6 +86,8 @@ class MovimientoForm(forms.ModelForm):
             # Si ya viene definido el Destino (Contexto Ingreso), lo ocultamos
             if initial.get('almacen_destino'):
                 self.fields['almacen_destino'].widget = forms.HiddenInput()
+        
+        # Nota: El campo 'proveedor' se mostrará/ocultará vía JavaScript según el tipo
 
     def clean(self):
         """Validación cruzada para asegurar que existan los almacenes correctos según el tipo."""
@@ -97,6 +101,10 @@ class MovimientoForm(forms.ModelForm):
         tipos_salida = ['SALIDA_OBRA', 'SALIDA_OFICINA', 'TRANSFERENCIA_SALIDA']
         # DEVOLUCION_LIMA y REINGRESO_LIMA tienen reglas especiales abajo
         # SALIDA_EPP se maneja como salida pero no requiere torre, requiere trabajador
+
+        # Validación de Proveedor
+        if tipo == 'INGRESO_COMPRA' and not cleaned_data.get('proveedor'):
+            self.add_error('proveedor', 'Para un Ingreso por Compra, es OBLIGATORIO seleccionar el Proveedor.')
 
         if tipo in tipos_ingreso and not destino:
             self.add_error('almacen_destino', 'Para registrar este Ingreso/Devolución, es OBLIGATORIO seleccionar el Almacén Destino.')

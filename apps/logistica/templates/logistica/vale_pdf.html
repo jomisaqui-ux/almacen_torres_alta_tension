@@ -171,7 +171,13 @@
         </tr>
         <tr>
             <td class="label">Origen:</td>
-            <td class="value">{{ movimiento.almacen_origen.nombre|default:"EXTERNO / PROVEEDOR" }}</td>
+            <td class="value">
+                {% if movimiento.proveedor %}
+                    {{ movimiento.proveedor.razon_social }}
+                {% else %}
+                    {{ movimiento.almacen_origen.nombre|default:"EXTERNO" }}
+                {% endif %}
+            </td>
             <td class="label">Destino:</td>
             <td class="value">
                 {% if movimiento.torre_destino %}
@@ -283,7 +289,7 @@
                     <small>Almacén / Logística</small>
                 {% else %}
                     {# En Ingreso: Entrega el Proveedor #}
-                    <small>Proveedor / Transportista</small>
+                    <small>{{ movimiento.proveedor.razon_social|default:"Proveedor / Transportista" }}</small>
                     <br><br>
                     <small>DNI: __________________</small>
                 {% endif %}

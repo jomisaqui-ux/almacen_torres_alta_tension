@@ -393,33 +393,6 @@ def operacion_almacen(request, tipo_accion, almacen_id):
                 almacen_seleccionado = nuevo_mov.almacen_origen or nuevo_mov.almacen_destino
                 nuevo_mov.proyecto = almacen_seleccionado.proyecto if almacen_seleccionado else Proyecto.objects.first()
 
-            # 3. GENERADOR DE CÓDIGO AUTOMÁTICO (NI o VS)
-            # Solo generamos si no tiene uno manual
-            if not nuevo_mov.nota_ingreso:
-                es_salida = 'SALIDA' in nuevo_mov.tipo or 'CONSUMO' in nuevo_mov.tipo
-                es_ingreso = 'INGRESO' in nuevo_mov.tipo or 'DEVOLUCION' in nuevo_mov.tipo or 'ENTRADA' in nuevo_mov.tipo
-                
-                prefix = None
-                if es_salida:
-                    prefix = 'VS-'
-                elif es_ingreso:
-                    prefix = 'NI-'
-                
-                if prefix:
-                    # Buscamos el último código de ese tipo (VS o NI)
-                    ultimo = Movimiento.objects.filter(nota_ingreso__startswith=prefix).order_by('-nota_ingreso').first()
-                    
-                    contador = 1
-                    if ultimo:
-                        try:
-                            # Ejemplo: NI-0007 -> toma "0007" -> suma 1 -> 8
-                            contador = int(ultimo.nota_ingreso.split('-')[1]) + 1
-                        except:
-                            contador = 1
-                    
-                    # Asignamos: NI-0008 o VS-0003
-                    nuevo_mov.nota_ingreso = f"{prefix}{contador:04d}"
-
             # --- GUARDAR ---
             nuevo_mov.save()
             form.save_m2m() 
@@ -560,19 +533,7 @@ def confirmar_movimiento_web(request, movimiento_id):
         try:
             # --- RED DE SEGURIDAD (Generador Tardío de Código) ---
             if not movimiento.nota_ingreso or movimiento.nota_ingreso == 'Por Generar':
-                es_salida = 'SALIDA' in movimiento.tipo or 'CONSUMO' in movimiento.tipo
-                es_ingreso = 'INGRESO' in movimiento.tipo or 'DEVOLUCION' in movimiento.tipo or 'ENTRADA' in movimiento.tipo
-                prefix = 'VS-' if es_salida else ('NI-' if es_ingreso else None)
-                
-                if prefix:
-                    ultimo = Movimiento.objects.filter(nota_ingreso__startswith=prefix).order_by('-nota_ingreso').first()
-                    contador = 1
-                    if ultimo:
-                        try:
-                            contador = int(ultimo.nota_ingreso.split('-')[1]) + 1
-                        except:
-                            contador = 1
-                    movimiento.nota_ingreso = f"{prefix}{contador:04d}"
+                # Al guardar, el modelo detectará que no tiene código y lo generará según su tipo
                 movimiento.save()
             
             # --- USAMOS EL SERVICIO CENTRALIZADO ---
